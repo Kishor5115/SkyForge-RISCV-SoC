@@ -1,0 +1,430 @@
+module soc_core #(
+    parameter MEM_INIT_FILE = ""
+)(
+    input  logic         clk_i,
+    input  logic         rst_ni
+);
+
+    // ------------------------------------------------------------
+    // Core <-> AXI fabric signals
+    // ------------------------------------------------------------
+    logic        mem_axi_awvalid;
+    logic        mem_axi_awready;
+    logic [31:0] mem_axi_awaddr;
+    logic [2:0]  mem_axi_awprot;
+
+    logic        mem_axi_wvalid;
+    logic        mem_axi_wready;
+    logic [31:0] mem_axi_wdata;
+    logic [3:0]  mem_axi_wstrb;
+
+    logic        mem_axi_bvalid;
+    logic        mem_axi_bready;
+
+    logic        mem_axi_arvalid;
+    logic        mem_axi_arready;
+    logic [31:0] mem_axi_araddr;
+    logic [2:0]  mem_axi_arprot;
+
+    logic        mem_axi_rvalid;
+    logic        mem_axi_rready;
+    logic [31:0] mem_axi_rdata;
+    logic [1:0]  mem_axi_bresp;
+    logic [1:0]  mem_axi_rresp;
+
+    logic        trap;
+    logic [31:0] cpu_irq;
+    logic [31:0] cpu_eoi;
+
+    // ------------------------------------------------------------
+    // AXI Interconnect <-> Slave signals
+    // ------------------------------------------------------------
+    logic        s0_awvalid, s0_awready;
+    logic [31:0] s0_awaddr;
+    logic [2:0]  s0_awprot;
+    logic        s0_wvalid, s0_wready;
+    logic [31:0] s0_wdata;
+    logic [3:0]  s0_wstrb;
+    logic        s0_bvalid, s0_bready;
+    logic [1:0]  s0_bresp;
+    logic        s0_arvalid, s0_arready;
+    logic [31:0] s0_araddr;
+    logic [2:0]  s0_arprot;
+    logic        s0_rvalid, s0_rready;
+    logic [31:0] s0_rdata;
+    logic [1:0]  s0_rresp;
+
+    logic        s1_awvalid, s1_awready;
+    logic [31:0] s1_awaddr;
+    logic [2:0]  s1_awprot;
+    logic        s1_wvalid, s1_wready;
+    logic [31:0] s1_wdata;
+    logic [3:0]  s1_wstrb;
+    logic        s1_bvalid, s1_bready;
+    logic [1:0]  s1_bresp;
+    logic        s1_arvalid, s1_arready;
+    logic [31:0] s1_araddr;
+    logic [2:0]  s1_arprot;
+    logic        s1_rvalid, s1_rready;
+    logic [31:0] s1_rdata;
+    logic [1:0]  s1_rresp;
+
+    logic        s2_awvalid, s2_awready;
+    logic [31:0] s2_awaddr;
+    logic [2:0]  s2_awprot;
+    logic        s2_wvalid, s2_wready;
+    logic [31:0] s2_wdata;
+    logic [3:0]  s2_wstrb;
+    logic        s2_bvalid, s2_bready;
+    logic [1:0]  s2_bresp;
+    logic        s2_arvalid, s2_arready;
+    logic [31:0] s2_araddr;
+    logic [2:0]  s2_arprot;
+    logic        s2_rvalid, s2_rready;
+    logic [31:0] s2_rdata;
+    logic [1:0]  s2_rresp;
+
+    logic        s3_awvalid, s3_awready;
+    logic [31:0] s3_awaddr;
+    logic [2:0]  s3_awprot;
+    logic        s3_wvalid, s3_wready;
+    logic [31:0] s3_wdata;
+    logic [3:0]  s3_wstrb;
+    logic        s3_bvalid, s3_bready;
+    logic [1:0]  s3_bresp;
+    logic        s3_arvalid, s3_arready;
+    logic [31:0] s3_araddr;
+    logic [2:0]  s3_arprot;
+    logic        s3_rvalid, s3_rready;
+    logic [31:0] s3_rdata;
+    logic [1:0]  s3_rresp;
+
+    // ------------------------------------------------------------
+    // APB bridge/interconnect signals
+    // ------------------------------------------------------------
+    logic        apb_psel;
+    logic        apb_penable;
+    logic        apb_pwrite;
+    logic [31:0] apb_paddr;
+    logic [31:0] apb_pwdata;
+    logic [3:0]  apb_pstrb;
+    logic [2:0]  apb_pprot;
+    logic [31:0] apb_prdata;
+    logic        apb_pready;
+    logic        apb_pslverr;
+
+    logic        psel_uart, penable_uart, pwrite_uart, pready_uart, pslverr_uart;
+    logic [31:0] paddr_uart, pwdata_uart, prdata_uart;
+    logic [3:0]  pstrb_uart;
+    logic [2:0]  pprot_uart;
+
+    logic        psel_timer, penable_timer, pwrite_timer, pready_timer, pslverr_timer;
+    logic [31:0] paddr_timer, pwdata_timer, prdata_timer;
+    logic [3:0]  pstrb_timer;
+    logic [2:0]  pprot_timer;
+
+    logic        psel_gpio, penable_gpio, pwrite_gpio, pready_gpio, pslverr_gpio;
+    logic [31:0] paddr_gpio, pwdata_gpio, prdata_gpio;
+    logic [3:0]  pstrb_gpio;
+    logic [2:0]  pprot_gpio;
+
+    logic        psel_spi, penable_spi, pwrite_spi, pready_spi, pslverr_spi;
+    logic [31:0] paddr_spi, pwdata_spi, prdata_spi;
+    logic [3:0]  pstrb_spi;
+    logic [2:0]  pprot_spi;
+
+    logic        psel_debug, penable_debug, pwrite_debug, pready_debug, pslverr_debug;
+    logic [31:0] paddr_debug, pwdata_debug, prdata_debug;
+    logic [3:0]  pstrb_debug;
+    logic [2:0]  pprot_debug;
+
+    // ------------------------------------------------------------
+    // Default IRQs/peripheral responses
+    // ------------------------------------------------------------
+    assign cpu_irq = 32'h0;
+
+    assign prdata_uart  = 32'h0; assign pready_uart  = 1'b1; assign pslverr_uart  = 1'b0;
+    assign prdata_timer = 32'h0; assign pready_timer = 1'b1; assign pslverr_timer = 1'b0;
+    assign prdata_gpio  = 32'h0; assign pready_gpio  = 1'b1; assign pslverr_gpio  = 1'b0;
+    assign prdata_spi   = 32'h0; assign pready_spi   = 1'b1; assign pslverr_spi   = 1'b0;
+    assign prdata_debug = 32'h0; assign pready_debug = 1'b1; assign pslverr_debug = 1'b0;
+
+    // ------------------------------------------------------------
+    // CPU core
+    // ------------------------------------------------------------
+    picorv32_axi #(
+        .PROGADDR_RESET(32'h0000_0000),
+        .STACKADDR     (32'h0002_FFFC)
+    ) u_cpu (
+        .clk            (clk_i),
+        .resetn         (rst_ni),
+        .trap           (trap),
+        .irq            (cpu_irq),
+        .eoi            (cpu_eoi),
+        .mem_axi_awvalid(mem_axi_awvalid),
+        .mem_axi_awready(mem_axi_awready),
+        .mem_axi_awaddr (mem_axi_awaddr),
+        .mem_axi_awprot (mem_axi_awprot),
+        .mem_axi_wvalid (mem_axi_wvalid),
+        .mem_axi_wready (mem_axi_wready),
+        .mem_axi_wdata  (mem_axi_wdata),
+        .mem_axi_wstrb  (mem_axi_wstrb),
+        .mem_axi_bvalid (mem_axi_bvalid),
+        .mem_axi_bready (mem_axi_bready),
+        .mem_axi_arvalid(mem_axi_arvalid),
+        .mem_axi_arready(mem_axi_arready),
+        .mem_axi_araddr (mem_axi_araddr),
+        .mem_axi_arprot (mem_axi_arprot),
+        .mem_axi_rvalid (mem_axi_rvalid),
+        .mem_axi_rready (mem_axi_rready),
+        .mem_axi_rdata  (mem_axi_rdata),
+        .trace_valid    (),
+        .trace_data     ()
+    );
+
+    axi_interconnect u_axi_xbar (
+        .clk            (clk_i),
+        .resetn         (rst_ni),
+        .m_axi_awvalid  (mem_axi_awvalid),
+        .m_axi_awready  (mem_axi_awready),
+        .m_axi_awaddr   (mem_axi_awaddr),
+        .m_axi_awprot   (mem_axi_awprot),
+        .m_axi_wvalid   (mem_axi_wvalid),
+        .m_axi_wready   (mem_axi_wready),
+        .m_axi_wdata    (mem_axi_wdata),
+        .m_axi_wstrb    (mem_axi_wstrb),
+        .m_axi_bvalid   (mem_axi_bvalid),
+        .m_axi_bready   (mem_axi_bready),
+        .m_axi_bresp    (mem_axi_bresp),
+        .m_axi_arvalid  (mem_axi_arvalid),
+        .m_axi_arready  (mem_axi_arready),
+        .m_axi_araddr   (mem_axi_araddr),
+        .m_axi_arprot   (mem_axi_arprot),
+        .m_axi_rvalid   (mem_axi_rvalid),
+        .m_axi_rready   (mem_axi_rready),
+        .m_axi_rresp    (mem_axi_rresp),
+        .m_axi_rdata    (mem_axi_rdata),
+        .s0_axi_awvalid (s0_awvalid), .s0_axi_awready(s0_awready),
+        .s0_axi_awaddr  (s0_awaddr),  .s0_axi_awprot (s0_awprot),
+        .s0_axi_wvalid  (s0_wvalid),  .s0_axi_wready (s0_wready),
+        .s0_axi_wdata   (s0_wdata),   .s0_axi_wstrb  (s0_wstrb),
+        .s0_axi_bvalid  (s0_bvalid),  .s0_axi_bready (s0_bready),
+        .s0_axi_bresp   (s0_bresp),
+        .s0_axi_arvalid (s0_arvalid), .s0_axi_arready(s0_arready),
+        .s0_axi_araddr  (s0_araddr),  .s0_axi_arprot (s0_arprot),
+        .s0_axi_rvalid  (s0_rvalid),  .s0_axi_rready (s0_rready),
+        .s0_axi_rresp   (s0_rresp),   .s0_axi_rdata  (s0_rdata),
+        .s1_axi_awvalid (s1_awvalid), .s1_axi_awready(s1_awready),
+        .s1_axi_awaddr  (s1_awaddr),  .s1_axi_awprot (s1_awprot),
+        .s1_axi_wvalid  (s1_wvalid),  .s1_axi_wready (s1_wready),
+        .s1_axi_wdata   (s1_wdata),   .s1_axi_wstrb  (s1_wstrb),
+        .s1_axi_bvalid  (s1_bvalid),  .s1_axi_bready (s1_bready),
+        .s1_axi_bresp   (s1_bresp),
+        .s1_axi_arvalid (s1_arvalid), .s1_axi_arready(s1_arready),
+        .s1_axi_araddr  (s1_araddr),  .s1_axi_arprot (s1_arprot),
+        .s1_axi_rvalid  (s1_rvalid),  .s1_axi_rready (s1_rready),
+        .s1_axi_rresp   (s1_rresp),   .s1_axi_rdata  (s1_rdata),
+        .s2_axi_awvalid (s2_awvalid), .s2_axi_awready(s2_awready),
+        .s2_axi_awaddr  (s2_awaddr),  .s2_axi_awprot (s2_awprot),
+        .s2_axi_wvalid  (s2_wvalid),  .s2_axi_wready (s2_wready),
+        .s2_axi_wdata   (s2_wdata),   .s2_axi_wstrb  (s2_wstrb),
+        .s2_axi_bvalid  (s2_bvalid),  .s2_axi_bready (s2_bready),
+        .s2_axi_bresp   (s2_bresp),
+        .s2_axi_arvalid (s2_arvalid), .s2_axi_arready(s2_arready),
+        .s2_axi_araddr  (s2_araddr),  .s2_axi_arprot (s2_arprot),
+        .s2_axi_rvalid  (s2_rvalid),  .s2_axi_rready (s2_rready),
+        .s2_axi_rresp   (s2_rresp),   .s2_axi_rdata  (s2_rdata),
+        .s3_axi_awvalid (s3_awvalid), .s3_axi_awready(s3_awready),
+        .s3_axi_awaddr  (s3_awaddr),  .s3_axi_awprot (s3_awprot),
+        .s3_axi_wvalid  (s3_wvalid),  .s3_axi_wready (s3_wready),
+        .s3_axi_wdata   (s3_wdata),   .s3_axi_wstrb  (s3_wstrb),
+        .s3_axi_bvalid  (s3_bvalid),  .s3_axi_bready (s3_bready),
+        .s3_axi_bresp   (s3_bresp),
+        .s3_axi_arvalid (s3_arvalid), .s3_axi_arready(s3_arready),
+        .s3_axi_araddr  (s3_araddr),  .s3_axi_arprot (s3_arprot),
+        .s3_axi_rvalid  (s3_rvalid),  .s3_axi_rready (s3_rready),
+        .s3_axi_rresp   (s3_rresp),   .s3_axi_rdata  (s3_rdata)
+    );
+
+    axi_ram #(
+        .ADDR_WIDTH   (16),
+        .DATA_WIDTH   (32),
+        .MEM_INIT_FILE(MEM_INIT_FILE)
+    ) u_bootrom (
+        .clk         (clk_i),
+        .resetn      (rst_ni),
+        .axi_awaddr  (s0_awaddr[15:0]),
+        .axi_awprot  (s0_awprot),
+        .axi_awvalid (s0_awvalid),
+        .axi_awready (s0_awready),
+        .axi_wdata   (s0_wdata),
+        .axi_wvalid  (s0_wvalid),
+        .axi_wready  (s0_wready),
+        .axi_wstrb   (s0_wstrb),
+        .axi_bvalid  (s0_bvalid),
+        .axi_bready  (s0_bready),
+        .axi_bresp   (s0_bresp),
+        .axi_araddr  (s0_araddr[15:0]),
+        .axi_arprot  (s0_arprot),
+        .axi_arvalid (s0_arvalid),
+        .axi_arready (s0_arready),
+        .axi_rdata   (s0_rdata),
+        .axi_rvalid  (s0_rvalid),
+        .axi_rready  (s0_rready),
+        .axi_rresp   (s0_rresp)
+    );
+
+    axi_ram #(
+        .ADDR_WIDTH(17),
+        .DATA_WIDTH(32)
+    ) u_sram (
+        .clk         (clk_i),
+        .resetn      (rst_ni),
+        .axi_awaddr  (s1_awaddr[16:0]),
+        .axi_awprot  (s1_awprot),
+        .axi_awvalid (s1_awvalid),
+        .axi_awready (s1_awready),
+        .axi_wdata   (s1_wdata),
+        .axi_wvalid  (s1_wvalid),
+        .axi_wready  (s1_wready),
+        .axi_wstrb   (s1_wstrb),
+        .axi_bvalid  (s1_bvalid),
+        .axi_bready  (s1_bready),
+        .axi_bresp   (s1_bresp),
+        .axi_araddr  (s1_araddr[16:0]),
+        .axi_arprot  (s1_arprot),
+        .axi_arvalid (s1_arvalid),
+        .axi_arready (s1_arready),
+        .axi_rdata   (s1_rdata),
+        .axi_rvalid  (s1_rvalid),
+        .axi_rready  (s1_rready),
+        .axi_rresp   (s1_rresp)
+    );
+
+    axi_ram #(
+        .ADDR_WIDTH(24),
+        .DATA_WIDTH(32)
+    ) u_flash (
+        .clk         (clk_i),
+        .resetn      (rst_ni),
+        .axi_awaddr  (s2_awaddr[23:0]),
+        .axi_awprot  (s2_awprot),
+        .axi_awvalid (s2_awvalid),
+        .axi_awready (s2_awready),
+        .axi_wdata   (s2_wdata),
+        .axi_wvalid  (s2_wvalid),
+        .axi_wready  (s2_wready),
+        .axi_wstrb   (s2_wstrb),
+        .axi_bvalid  (s2_bvalid),
+        .axi_bready  (s2_bready),
+        .axi_bresp   (s2_bresp),
+        .axi_araddr  (s2_araddr[23:0]),
+        .axi_arprot  (s2_arprot),
+        .axi_arvalid (s2_arvalid),
+        .axi_arready (s2_arready),
+        .axi_rdata   (s2_rdata),
+        .axi_rvalid  (s2_rvalid),
+        .axi_rready  (s2_rready),
+        .axi_rresp   (s2_rresp)
+    );
+
+    axi2apb_bridge u_axi2apb (
+        .clk       (clk_i),
+        .resetn    (rst_ni),
+        .axi_awvalid(s3_awvalid),
+        .axi_awready(s3_awready),
+        .axi_awaddr (s3_awaddr),
+        .axi_awprot (s3_awprot),
+        .axi_wvalid (s3_wvalid),
+        .axi_wready (s3_wready),
+        .axi_wdata  (s3_wdata),
+        .axi_wstrb  (s3_wstrb),
+        .axi_bvalid (s3_bvalid),
+        .axi_bready (s3_bready),
+        .axi_bresp  (s3_bresp),
+        .axi_arvalid(s3_arvalid),
+        .axi_arready(s3_arready),
+        .axi_araddr (s3_araddr),
+        .axi_arprot (s3_arprot),
+        .axi_rvalid (s3_rvalid),
+        .axi_rready (s3_rready),
+        .axi_rdata  (s3_rdata),
+        .axi_rresp  (s3_rresp),
+        .apb_psel   (apb_psel),
+        .apb_penable(apb_penable),
+        .apb_pwrite (apb_pwrite),
+        .apb_paddr  (apb_paddr),
+        .apb_pwdata (apb_pwdata),
+        .apb_pstrb  (apb_pstrb),
+        .apb_pprot  (apb_pprot),
+        .apb_prdata (apb_prdata),
+        .apb_pready (apb_pready),
+        .apb_pslverr(apb_pslverr)
+    );
+
+    apb_interconnect u_apb_xbar (
+        .clk          (clk_i),
+        .resetn       (rst_ni),
+        .psel_i       (apb_psel),
+        .penable_i    (apb_penable),
+        .pwrite_i     (apb_pwrite),
+        .paddr_i      (apb_paddr),
+        .pwdata_i     (apb_pwdata),
+        .pstrb_i      (apb_pstrb),
+        .pprot_i      (apb_pprot),
+        .prdata_o     (apb_prdata),
+        .pready_o     (apb_pready),
+        .pslverr_o    (apb_pslverr),
+        .psel_uart    (psel_uart),
+        .penable_uart (penable_uart),
+        .pwrite_uart  (pwrite_uart),
+        .paddr_uart   (paddr_uart),
+        .pwdata_uart  (pwdata_uart),
+        .pstrb_uart   (pstrb_uart),
+        .pprot_uart   (pprot_uart),
+        .prdata_uart  (prdata_uart),
+        .pready_uart  (pready_uart),
+        .pslverr_uart (pslverr_uart),
+        .psel_timer   (psel_timer),
+        .penable_timer(penable_timer),
+        .pwrite_timer (pwrite_timer),
+        .paddr_timer  (paddr_timer),
+        .pwdata_timer (pwdata_timer),
+        .pstrb_timer  (pstrb_timer),
+        .pprot_timer  (pprot_timer),
+        .prdata_timer (prdata_timer),
+        .pready_timer (pready_timer),
+        .pslverr_timer(pslverr_timer),
+        .psel_gpio    (psel_gpio),
+        .penable_gpio (penable_gpio),
+        .pwrite_gpio  (pwrite_gpio),
+        .paddr_gpio   (paddr_gpio),
+        .pwdata_gpio  (pwdata_gpio),
+        .pstrb_gpio   (pstrb_gpio),
+        .pprot_gpio   (pprot_gpio),
+        .prdata_gpio  (prdata_gpio),
+        .pready_gpio  (pready_gpio),
+        .pslverr_gpio (pslverr_gpio),
+        .psel_spi     (psel_spi),
+        .penable_spi  (penable_spi),
+        .pwrite_spi   (pwrite_spi),
+        .paddr_spi    (paddr_spi),
+        .pwdata_spi   (pwdata_spi),
+        .pstrb_spi    (pstrb_spi),
+        .pprot_spi    (pprot_spi),
+        .prdata_spi   (prdata_spi),
+        .pready_spi   (pready_spi),
+        .pslverr_spi  (pslverr_spi),
+        .psel_debug   (psel_debug),
+        .penable_debug(penable_debug),
+        .pwrite_debug (pwrite_debug),
+        .paddr_debug  (paddr_debug),
+        .pwdata_debug (pwdata_debug),
+        .pstrb_debug  (pstrb_debug),
+        .pprot_debug  (pprot_debug),
+        .prdata_debug (prdata_debug),
+        .pready_debug (pready_debug),
+        .pslverr_debug(pslverr_debug)
+    );
+
+endmodule
