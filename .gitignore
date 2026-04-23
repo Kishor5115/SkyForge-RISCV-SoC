@@ -1,0 +1,13 @@
+# Simulation artifacts
+*.vvp
+*.vcd
+*.trace
+obj_dir/
+sim/obj_dir/
+*.log
+
+# Editor/IDE files
+.vscode/
+*.swp
+*~
+.DS_Store
