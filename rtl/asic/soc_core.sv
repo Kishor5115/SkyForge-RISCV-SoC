@@ -450,4 +450,47 @@ module soc_core #(
         .irq        (uart_irq)
     );
 
+    // Timer
+    timer_apb u_timer (
+        .clk(clk),
+        .resetn(resetn),
+        .psel(psel_timer),
+        .penable(penable_timer),
+        .pwrite(pwrite_timer),
+        .paddr(paddr_timer),
+        .pwdata(pwdata_timer),
+        .pstrb(pstrb_timer),
+        .pprot(pprot_timer),
+        .prdata(prdata_timer),
+        .pready(pready_timer),
+        .pslverr(pslverr_timer),
+        .timer_irq(timer_irq)
+    );
+
+    // GPIO
+    gpio_apb u_gpio (
+        .clk        (clk),
+        .resetn     (sys_resetn),
+        .psel       (psel_gpio),
+        .penable    (penable_gpio),
+        .pwrite     (pwrite_gpio),
+        .paddr      (paddr_gpio),
+        .pwdata     (pwdata_gpio),
+        .pstrb      (pstrb_gpio),
+        .pprot      (pprot_gpio),
+        .prdata     (prdata_gpio),
+        .pready     (pready_gpio),
+        .pslverr    (pslverr_gpio),
+        .gpio_in    (gpio_in),
+        .gpio_out   (gpio_out),
+        .gpio_oe    (gpio_oe),
+        .gpio_pue   (),
+        .gpio_ds    (),
+        .iof_en     (),
+        .iof_sel    (),
+        .gpio_irq   (gpio_irq_w)
+    );
+
+    assign gpio_irq = gpio_irq_w;
+
 endmodule

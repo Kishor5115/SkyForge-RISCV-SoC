@@ -70,3 +70,19 @@ $(SIM_DIR)/uart_ctrl_apb_tb.vvp: $(RTL_DIR)/peripherals/uart/*.sv $(TB_DIR)/uart
 	
 clean:
 	rm -rf $(SIM_DIR)
+
+# ── GPIO ──────────────────────────────────────────────────────────────────────
+sim_gpio: $(SIM_DIR)/gpio_apb_tb.vvp
+	$(VVP) $<
+
+$(SIM_DIR)/gpio_apb_tb.vvp: $(RTL_DIR)/peripherals/gpio/gpio_apb.sv $(TB_DIR)/gpio_apb_tb.sv
+	mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IVFLAGS) -o $@ $^
+
+# ── Timer ─────────────────────────────────────────────────────────────────────
+sim_timer: $(SIM_DIR)/timer_apb_tb.vvp
+	$(VVP) $<
+
+$(SIM_DIR)/timer_apb_tb.vvp: $(RTL_DIR)/peripherals/timer/timer_apb.sv $(TB_DIR)/timer_apb_tb.sv
+	mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IVFLAGS) -o $@ $^
