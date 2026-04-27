@@ -60,5 +60,13 @@ $(SIM_DIR)/axi_interconnect_tb.out: $(TB_DIR)/axi_interconect_tb.sv $(RTL_DIR)/i
 	mkdir -p $(SIM_DIR)
 	$(IVERILOG) $(IVFLAGS) -o $@ $^
 
+# ── UART ──────────────────────────────────────────────────────────────────────
+sim_uart: $(SIM_DIR)/uart_ctrl_apb_tb.vvp
+	$(VVP) $<
+
+$(SIM_DIR)/uart_ctrl_apb_tb.vvp: $(RTL_DIR)/peripherals/uart/*.sv $(TB_DIR)/uart_ctrl_apb_tb.sv
+	mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IVFLAGS) -o $@ $^
+	
 clean:
 	rm -rf $(SIM_DIR)

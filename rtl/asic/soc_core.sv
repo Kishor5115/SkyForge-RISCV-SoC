@@ -427,4 +427,27 @@ module soc_core #(
         .pslverr_debug(pslverr_debug)
     );
 
+    //========================================
+    // Peripherals (ASIC-safe subset)
+    //========================================
+
+    // UART
+    uart_ctrl_apb u_uart (
+        .clk        (clk),
+        .resetn     (resetn),
+        .psel       (psel_uart),
+        .penable    (penable_uart),
+        .pwrite     (pwrite_uart),
+        .paddr      (paddr_uart),
+        .pwdata     (pwdata_uart),
+        .pstrb      (pstrb_uart),
+        .pprot      (pprot_uart),
+        .prdata     (prdata_uart),
+        .pready     (pready_uart),
+        .pslverr    (pslverr_uart),
+        .uart_tx    (uart_tx),
+        .uart_rx    (uart_rx),
+        .irq        (uart_irq)
+    );
+
 endmodule
