@@ -491,6 +491,26 @@ module soc_core #(
         .gpio_irq   (gpio_irq_w)
     );
 
+    // SPI Master
+    spi_master_apb u_spi (
+        .clk        (clk),
+        .resetn     (sys_resetn),
+        .psel       (psel_spi),
+        .penable    (penable_spi),
+        .pwrite     (pwrite_spi),
+        .paddr      (paddr_spi),
+        .pwdata     (pwdata_spi),
+        .pstrb      (pstrb_spi),
+        .pprot      (pprot_spi),
+        .prdata     (prdata_spi),
+        .pready     (pready_spi),
+        .pslverr    (pslverr_spi),
+        .spi_sclk   (spi_sclk),
+        .spi_mosi   (spi_mosi),
+        .spi_miso   (spi_miso),
+        .spi_cs_n   (spi_cs_n),
+        .irq        (spi_irq_w)
+    );
     assign gpio_irq = gpio_irq_w;
 
 endmodule
