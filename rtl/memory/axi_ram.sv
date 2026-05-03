@@ -58,6 +58,12 @@ module axi_ram #(
     localparam MEM_DEPTH = 2 ** (ADDR_WIDTH - 2);
     logic [DATA_WIDTH-1:0] memory [0:MEM_DEPTH-1];
 
+    initial begin
+        if (MEM_INIT_FILE != "") begin
+            $readmemh(MEM_INIT_FILE, memory);
+        end
+    end
+
     // Initialize memory (optional: load from file)
     initial begin
         for (int i = 0; i < MEM_DEPTH; i++) begin

@@ -1,79 +1,20 @@
 /*
- * boot_firmware.c — ASIC Boot Loader for RISC-V SoC
+ * boot_rom.c — ASIC Boot Loader for RISC-V SoC
  *
  * This is the professional boot ROM firmware that executes from address 0x0000_0000.
- * It performs the following boot sequence:
- *
- *   1. Initialize UART (115200 baud)
- *   2. Print boot banner with SoC identification
- *   3. Initialize SPI flash (JEDEC ID probe)
- *   4. Copy application from flash to SRAM (if flash present)
- *   5. Jump to application entry point
- *   6. Fall back to debug monitor loop if no app found
- *
- * Memory Map:
- *   0x0000_0000 - 0x0000_3FFF : Boot ROM (16KB, this firmware)
- *   0x0001_0000 - 0x0001_7FFF : SRAM (32KB, application target)
- *   0x2000_0000 - 0x2000_0FFF : UART
- *   0x2000_1000 - 0x2000_1FFF : Timer
- *   0x2000_2000 - 0x2000_2FFF : GPIO
- *   0x2000_3000 - 0x2000_3FFF : SPI Master
- *   0x2000_4000 - 0x2000_4FFF : Debug Mailbox
- *   0x4000_0000 - 0x40FF_FFFF : Flash Controller (register + XIP)
- *
- * Build:
- *   riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -Os \
- *       -T boot_linker.ld -o boot_firmware.elf boot_firmware.c start.S
- *   riscv32-unknown-elf-objcopy -O verilog boot_firmware.elf bootrom.hex
  */
 
-/* ================================================================== */
-/*  Peripheral Registers                                               */
-/* ================================================================== */
-
-/* UART (Base: 0x20000000) */
-#define UART_BASE        0x20000000u
-#define UART_TX_DATA     (*(volatile unsigned int *)(UART_BASE + 0x00))
-#define UART_RX_DATA     (*(volatile unsigned int *)(UART_BASE + 0x04))
-#define UART_STATUS      (*(volatile unsigned int *)(UART_BASE + 0x08))
-#define UART_CTRL        (*(volatile unsigned int *)(UART_BASE + 0x0C))
-#define UART_BAUD_DIV    (*(volatile unsigned int *)(UART_BASE + 0x10))
-
-/* Flash Controller (Base: 0x40000000) */
-#define FLASH_BASE       0x40000000u
-#define FLASH_CTRL       (*(volatile unsigned int *)(FLASH_BASE + 0x00))
-#define FLASH_STATUS     (*(volatile unsigned int *)(FLASH_BASE + 0x04))
-#define FLASH_CMD        (*(volatile unsigned int *)(FLASH_BASE + 0x08))
-#define FLASH_ADDR       (*(volatile unsigned int *)(FLASH_BASE + 0x0C))
-#define FLASH_TXDATA     (*(volatile unsigned int *)(FLASH_BASE + 0x10))
-#define FLASH_RXDATA     (*(volatile unsigned int *)(FLASH_BASE + 0x14))
-#define FLASH_CLKDIV     (*(volatile unsigned int *)(FLASH_BASE + 0x18))
-#define FLASH_JEDEC      (*(volatile unsigned int *)(FLASH_BASE + 0x1C))
-
-/* GPIO (Base: 0x20002000) */
-#define GPIO_BASE        0x20002000u
-#define GPIO_OUTPUT_EN   (*(volatile unsigned int *)(GPIO_BASE + 0x08))
-#define GPIO_OUTPUT_VAL  (*(volatile unsigned int *)(GPIO_BASE + 0x0C))
-
-/* Debug Mailbox (Base: 0x20004000) */
-#define DEBUG_BASE       0x20004000u
-#define DEBUG_STATUS     (*(volatile unsigned int *)(DEBUG_BASE + 0x00))
-#define DEBUG_CMD        (*(volatile unsigned int *)(DEBUG_BASE + 0x08))
-#define DEBUG_ADDR       (*(volatile unsigned int *)(DEBUG_BASE + 0x0C))
-#define DEBUG_RDATA      (*(volatile unsigned int *)(DEBUG_BASE + 0x14))
-#define DEBUG_ACK        (*(volatile unsigned int *)(DEBUG_BASE + 0x1C))
+#include "uart.h"
+#include "timer.h"
+#include "gpio.h"
+#include "spi.h"
+#include "irq.h"
 
 /* Application entry point in SRAM */
 #define APP_ENTRY_ADDR   0x00010000u
 #define APP_MAGIC        0x52534356u  /* "RSCV" — magic word at flash offset 0 */
 
-/* Flash application image layout (at flash offset 0):
- *   [0x00] uint32_t magic      = 0x52534356 ("RSCV")
- *   [0x04] uint32_t app_size   = size in bytes
- *   [0x08] uint32_t entry_addr = entry point in SRAM
- *   [0x0C] uint32_t checksum   = simple XOR checksum
- *   [0x10] uint8_t  data[]     = application binary
- */
+/* Flash application image layout (at flash offset 0) */
 #define FLASH_IMAGE_HDR_OFF  0x00000000u
 #define FLASH_IMAGE_DATA_OFF 0x00000010u
 
@@ -81,24 +22,11 @@
 /*  Helper Functions                                                    */
 /* ================================================================== */
 
-static void uart_putchar(char c)
-{
-    while (UART_STATUS & (1u << 1))   /* wait while TX FIFO full */
-        ;
-    UART_TX_DATA = (unsigned int)c;
-}
-
-static void uart_puts(const char *s)
-{
-    while (*s)
-        uart_putchar(*s++);
-}
-
 static void uart_put_hex(unsigned int val, int digits)
 {
     for (int i = digits - 1; i >= 0; i--) {
         unsigned int nibble = (val >> (i * 4)) & 0xF;
-        uart_putchar(nibble < 10 ? '0' + nibble : 'A' + (nibble - 10));
+        uart_putc(nibble < 10 ? '0' + nibble : 'A' + (nibble - 10));
     }
 }
 
@@ -116,7 +44,7 @@ static void delay(unsigned int cycles)
 
 static void led_progress(unsigned int step)
 {
-    GPIO_OUTPUT_VAL = (1u << step) & 0xFFFF;
+    gpio_write((1u << step) & 0xFFFF);
 }
 
 /* ================================================================== */
@@ -126,39 +54,39 @@ static void led_progress(unsigned int step)
 static void flash_init(void)
 {
     /* Enable controller, set clock divisor for ~1 MHz SPI */
-    FLASH_CLKDIV = 50;   /* 100 MHz / (2 * (50+1)) ≈ 980 KHz */
-    FLASH_CTRL   = 0x01; /* Enable */
+    mmio_write(FLASH_BASE + 0x18, 50);   /* 100 MHz / (2 * (50+1)) ≈ 980 KHz */
+    mmio_write(FLASH_BASE + 0x00, 0x01); /* Enable */
     delay(100);
 }
 
 static int flash_read_jedec(unsigned int *jedec_out)
 {
     /* Issue JEDEC ID read command (0x9F) */
-    FLASH_CMD = (1u << 8) | 0x9F;  /* start=1, cmd=0x9F */
+    mmio_write(FLASH_BASE + 0x08, (1u << 8) | 0x9F);  /* start=1, cmd=0x9F */
 
     /* Wait for completion */
     unsigned int timeout = 100000;
-    while ((FLASH_STATUS & 0x01) && timeout > 0)
+    while ((mmio_read(FLASH_BASE + 0x04) & 0x01) && timeout > 0)
         timeout--;
 
     if (timeout == 0) return -1;
 
-    *jedec_out = FLASH_JEDEC & 0x00FFFFFF;
+    *jedec_out = mmio_read(FLASH_BASE + 0x1C) & 0x00FFFFFF;
     return 0;
 }
 
 static int flash_read_byte(unsigned int addr, unsigned char *data)
 {
-    FLASH_ADDR = addr;
-    FLASH_CMD  = (1u << 8) | 0x03;  /* start=1, cmd=READ (0x03) */
+    mmio_write(FLASH_BASE + 0x0C, addr);
+    mmio_write(FLASH_BASE + 0x08, (1u << 8) | 0x03);  /* start=1, cmd=READ (0x03) */
 
     unsigned int timeout = 100000;
-    while ((FLASH_STATUS & 0x01) && timeout > 0)
+    while ((mmio_read(FLASH_BASE + 0x04) & 0x01) && timeout > 0)
         timeout--;
 
     if (timeout == 0) return -1;
 
-    unsigned int rx = FLASH_RXDATA;
+    unsigned int rx = mmio_read(FLASH_BASE + 0x14);
     if (rx & (1u << 31)) return -1;  /* empty flag */
     *data = (unsigned char)(rx & 0xFF);
     return 0;
@@ -192,13 +120,13 @@ static void debug_monitor(void)
     while (1) {
         delay(5000000);
         toggle ^= 1;
-        GPIO_OUTPUT_VAL = toggle;
+        gpio_write(toggle);
 
         /* Check debug mailbox for any JTAG commands */
-        unsigned int status = DEBUG_STATUS;
+        unsigned int status = mmio_read(DEBUG_BASE + 0x00);
         if (status & 0x01) {
-            unsigned int cmd = DEBUG_CMD & 0xFF;
-            unsigned int addr = DEBUG_ADDR;
+            unsigned int cmd = mmio_read(DEBUG_BASE + 0x08) & 0xFF;
+            unsigned int addr = mmio_read(DEBUG_BASE + 0x0C);
 
             uart_puts("[DBG] CMD=");
             uart_put_hex(cmd, 2);
@@ -209,16 +137,16 @@ static void debug_monitor(void)
             if (cmd == 0x01) {
                 /* Read: return memory value */
                 volatile unsigned int *ptr = (volatile unsigned int *)addr;
-                DEBUG_RDATA = *ptr;
-                DEBUG_ACK = 0x1;
+                mmio_write(DEBUG_BASE + 0x14, *ptr);
+                mmio_write(DEBUG_BASE + 0x1C, 0x1);
             } else if (cmd == 0x02) {
                 /* Write */
                 volatile unsigned int *ptr = (volatile unsigned int *)addr;
-                unsigned int wdata = *(volatile unsigned int *)(DEBUG_BASE + 0x10);
+                unsigned int wdata = mmio_read(DEBUG_BASE + 0x10);
                 *ptr = wdata;
-                DEBUG_ACK = 0x1;
+                mmio_write(DEBUG_BASE + 0x1C, 0x1);
             } else {
-                DEBUG_ACK = 0x2;  /* Error */
+                mmio_write(DEBUG_BASE + 0x1C, 0x2);  /* Error */
             }
         }
     }
@@ -228,13 +156,14 @@ static void debug_monitor(void)
 /*  Main Boot Entry                                                     */
 /* ================================================================== */
 
-void boot_main(void)
+void main(void)
 {
     /* ── Step 1: Initialize GPIO (LEDs for progress) ──────────── */
-    GPIO_OUTPUT_EN = 0x0000FFFF;
+    gpio_set_output_en(0x0000FFFF);
     led_progress(0);
 
     /* ── Step 2: UART Banner ──────────────────────────────────── */
+    uart_init(54);
     uart_puts("\r\n");
     uart_puts("╔══════════════════════════════════════════════════╗\r\n");
     uart_puts("║       RISC-V SoC — Boot ROM v1.0                ║\r\n");
@@ -337,7 +266,7 @@ void boot_main(void)
         xor_check ^= byte;
 
         /* Progress dot every 1KB */
-        if ((i & 0x3FF) == 0) uart_putchar('.');
+        if ((i & 0x3FF) == 0) uart_putc('.');
     }
     uart_puts(" done\r\n");
     led_progress(5);

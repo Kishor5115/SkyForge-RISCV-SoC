@@ -1,98 +1,95 @@
-# Select which "game" (firmware app) to build.
-# 
-# - Default is the current Breakout implementation in main.c
-# - To add another game: create firmware/games/<name>.c with its own main()
-#   and build with: make GAME=<name>
-GAME    ?= breakout
-
 # ============================================================================
-# Firmware Makefile for RISC-V SoC 
+# Professional RISC-V SoC Firmware Makefile
 # ============================================================================
 
-# Toolchain prefix
-PREFIX   = riscv64-unknown-elf
-
-# Tool Variables
-CC 		 = $(PREFIX)-gcc
-AS 		 = $(PREFIX)-as
-LD 		 = $(PREFIX)-ld
+# Toolchain
+PREFIX   ?= riscv64-unknown-elf
+CC       = $(PREFIX)-gcc
+AS       = $(PREFIX)-gcc
+LD       = $(PREFIX)-ld
 OBJCOPY  = $(PREFIX)-objcopy
-OBJDUMP  = $(PREFIX)-objdump	
-SIZE 	 = $(PREFIX)-size
+OBJDUMP  = $(PREFIX)-objdump
+SIZE     = $(PREFIX)-size
 
-# Architecture flags - must match the core configuration
-# march - Machine Architecture (ISA - Instruction Set Architecture)
-# mabi - Machine ABI (Application Binary Interface)
-ARCH     = -march=rv32i -mabi=ilp32 
+# Build Directories
+BUILD_DIR = build
+DRV_DIR   = drivers
+LIB_DIR   = lib
+SOFT_DIR  = software
+TEST_DIR  = tests
+BOOT_DIR  = boot
 
-# Compiler flags
+# Architecture
+ARCH     = -march=rv32i -mabi=ilp32
+CFLAGS   = $(ARCH) -Os -Wall -ffreestanding -nostdlib
+CFLAGS  += -I$(DRV_DIR)/inc -I$(LIB_DIR)/inc
+ASFLAGS  = $(ARCH) -c
+LDFLAGS  = -nostdlib -m elf32lriscv
 
-CFLAGS   = $(ARCH) -Os -Wall -ffreestanding -nostdlib -c
-ASFLAGS  = $(ARCH) 
-# Link flags
+# Common Objects (HAL + Startup)
+CRT0     = $(BUILD_DIR)/crt0.o
+DRV_SRCS = $(wildcard $(DRV_DIR)/src/*.c)
+DRV_OBJS = $(patsubst $(DRV_DIR)/src/%.c,$(BUILD_DIR)/drivers/%.o,$(DRV_SRCS))
+
 LIBGCC   = $(shell $(CC) $(ARCH) -print-libgcc-file-name)
-LDFLAGS  = -T linker.ld -nostdlib -m elf32lriscv
 
-# Source files
-SRCS_S   = start.S
-ifeq ($(GAME),breakout)
-SRCS_C  = main.c irq_handler.c
-else
-SRCS_C  = games/$(GAME).c irq_handler.c
-endif
-OBJS     = start.o $(patsubst %.c,%.o,$(SRCS_C))
+.PHONY: all clean software integration_test boot_rom
 
-# Output files
-TARGET   = firmware
+all: software
 
-# ============================================================================
-# Build Rules
-# ============================================================================
+clean:
+	rm -rf $(BUILD_DIR)
 
-all: $(TARGET).hex $(TARGET).lst
-		@echo "Build complete!"
-		@$(SIZE) $(TARGET).elf
+# Ensure build directories exist
+$(BUILD_DIR)/%/:
+	mkdir -p $@
 
-# Assemble the startup code
-start.o: start.S
-		$(AS) $(ASFLAGS) -o $@ $<
+# Rules for object files
+$(BUILD_DIR)/crt0.o: $(LIB_DIR)/src/crt0.S
+	@mkdir -p $(BUILD_DIR)
+	$(AS) $(ASFLAGS) -o $@ $<
 
-# Compile the C source files
-%.o: %.c
-		$(CC) $(CFLAGS) -o $@ $<
+$(BUILD_DIR)/drivers/%.o: $(DRV_DIR)/src/%.c
+	@mkdir -p $(BUILD_DIR)/drivers
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Link the object files into an executable
-$(TARGET).elf: $(OBJS)
-		$(LD) $(LDFLAGS) -o $@ $^ $(LIBGCC)			 
+$(BUILD_DIR)/%.o: $(SOFT_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Generate HEX for $readmemh()
-$(TARGET).hex: $(TARGET).elf
-		$(OBJCOPY) -O verilog --verilog-data-width 4 $< $@
+$(BUILD_DIR)/%.o: $(TEST_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Generate disassembly listing for debugging
-$(TARGET).lst: $(TARGET).elf
-		$(OBJDUMP) -d -S $< > $@
+$(BUILD_DIR)/%.o: $(BOOT_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
+# Target: Main Software
+software: $(BUILD_DIR)/main.hex $(BUILD_DIR)/main.lst
+	@echo "Build complete: $(BUILD_DIR)/main.hex"
 
-# ============================================================================
-# Utility Targets
-# ============================================================================
+$(BUILD_DIR)/main.elf: $(BUILD_DIR)/main.o $(CRT0) $(DRV_OBJS)
+	$(LD) $(LDFLAGS) -T $(LIB_DIR)/scripts/linker.ld -o $@ $^ $(LIBGCC)
 
-# Show memory usage
-size: $(TARGET).elf
-		$(SIZE) $<
+# Target: Integration Test
+integration_test: $(BUILD_DIR)/integration_test_boot.hex $(BUILD_DIR)/integration_test_boot.lst
+	@echo "Integration Test Build complete."
 
-# Verify _start is at address 0
-check: $(TARGET).elf
-		@echo "=== Entry point check ==="
-		@$(OBJDUMP) -d $< | head -20
-		@echo ""
-		@echo "=== Symbol table ==="
-		@$(OBJDUMP) -t $< | grep -E "(_start|main|_stack_top|_bss|__global)"
+$(BUILD_DIR)/integration_test_boot.elf: $(BUILD_DIR)/integration_test.o $(CRT0) $(DRV_OBJS)
+	$(LD) $(LDFLAGS) -T $(LIB_DIR)/scripts/boot_linker.ld -o $@ $^ $(LIBGCC)
 
-clean: 
-		rm -f *.o games/*.o $(TARGET).elf $(TARGET).hex $(TARGET).lst
+# Target: Boot ROM
+boot_rom: $(BUILD_DIR)/boot_rom.hex $(BUILD_DIR)/boot_rom.lst
+	@echo "Boot ROM Build complete."
 
-.PHONY: all clean size check
+$(BUILD_DIR)/boot_rom.elf: $(BUILD_DIR)/boot_rom.o $(CRT0) $(DRV_OBJS)
+	$(LD) $(LDFLAGS) -T $(LIB_DIR)/scripts/boot_linker.ld -o $@ $^ $(LIBGCC)
 
+# Generic rules for HEX and LST
+%.hex: %.elf
+	$(OBJCOPY) -O verilog --verilog-data-width 4 $< $@
 
+%.lst: %.elf
+	$(OBJDUMP) -d -S $< > $@
+	$(SIZE) $<

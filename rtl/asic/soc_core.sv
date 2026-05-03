@@ -1,8 +1,34 @@
 module soc_core #(
-    parameter MEM_INIT_FILE = ""
+    parameter MEM_INIT_FILE       = "",
+    parameter BOOTROM_ADDR_WIDTH  = 13,  // 8KB (2^13 bytes = 0x0000-0x1FFF)
+    parameter PROGADDR_IRQ        = 32'h00010010 // Default: SRAM
 )(
     input  logic         clk_i,
-    input  logic         rst_ni
+    input  logic         rst_ni,
+    // UART
+    output logic         uart_tx_o,
+    input  logic         uart_rx_i,
+    // GPIO
+    input  logic [31:0]  gpio_in_i,
+    output logic [31:0]  gpio_out_o,
+    output logic [31:0]  gpio_oe_o,
+    // SPI Master
+    output logic         spi_sclk_o,
+    output logic         spi_mosi_o,
+    input  logic         spi_miso_i,
+    output logic [3:0]   spi_cs_n_o,
+    // Flash QSPI
+    output logic         flash_sclk_o,
+    output logic         flash_cs_n_o,
+    output logic         flash_mosi_o,
+    input  logic         flash_miso_i,
+    // JTAG
+    input  logic         jtag_tck_i,
+    input  logic         jtag_tms_i,
+    input  logic         jtag_tdi_i,
+    output logic         jtag_tdo_o,
+    // Status
+    output logic         trap_o
 );
 
     // ------------------------------------------------------------
@@ -32,7 +58,6 @@ module soc_core #(
     logic [1:0]  mem_axi_bresp;
     logic [1:0]  mem_axi_rresp;
 
-    logic        trap;
     logic [31:0] cpu_irq;
     logic [31:0] cpu_eoi;
 
@@ -139,26 +164,35 @@ module soc_core #(
     logic [2:0]  pprot_debug;
 
     // ------------------------------------------------------------
-    // Default IRQs/peripheral responses
+    // Peripheral wires (directly driven by peripheral instances)
     // ------------------------------------------------------------
-    assign cpu_irq = 32'h0;
-
-    assign prdata_uart  = 32'h0; assign pready_uart  = 1'b1; assign pslverr_uart  = 1'b0;
-    assign prdata_timer = 32'h0; assign pready_timer = 1'b1; assign pslverr_timer = 1'b0;
-    assign prdata_gpio  = 32'h0; assign pready_gpio  = 1'b1; assign pslverr_gpio  = 1'b0;
-    assign prdata_spi   = 32'h0; assign pready_spi   = 1'b1; assign pslverr_spi   = 1'b0;
-    assign prdata_debug = 32'h0; assign pready_debug = 1'b1; assign pslverr_debug = 1'b0;
+    logic        uart_irq, timer_irq, spi_irq_w, debug_irq;
+    logic        gpio_irq_w;
+    logic        dbg_cpu_reset_req;
+    // JTAG <-> Debug bridge
+    logic        jdbg_valid, jdbg_write, jdbg_ready;
+    logic [7:0]  jdbg_addr;
+    logic [31:0] jdbg_wdata, jdbg_rdata;
+    logic [3:0]  jdbg_wstrb;
+    // Flash controller status
+    logic        flash_ready;
+    logic [23:0] flash_jedec_id;
+    logic        xip_active;
 
     // ------------------------------------------------------------
     // CPU core
     // ------------------------------------------------------------
     picorv32_axi #(
-        .PROGADDR_RESET(32'h0000_0000),
-        .STACKADDR     (32'h0002_FFFC)
+        .ENABLE_IRQ        (1),
+        .ENABLE_IRQ_QREGS  (1),
+        .ENABLE_IRQ_TIMER  (1),
+        .PROGADDR_RESET    (32'h0000_0000),    // Boot ROM reset vector
+        .PROGADDR_IRQ      (PROGADDR_IRQ),    // IRQ vector in SRAM (linker: .org 0x10 in SRAM)
+        .STACKADDR         (32'h0001_7FFC)     // Top of 32KB SRAM
     ) u_cpu (
         .clk            (clk_i),
         .resetn         (rst_ni),
-        .trap           (trap),
+        .trap           (trap_o),
         .irq            (cpu_irq),
         .eoi            (cpu_eoi),
         .mem_axi_awvalid(mem_axi_awvalid),
@@ -246,14 +280,14 @@ module soc_core #(
         .s3_axi_rresp   (s3_rresp),   .s3_axi_rdata  (s3_rdata)
     );
 
-    axi_ram #(
-        .ADDR_WIDTH   (16),
+    bootrom #(
+        .ADDR_WIDTH   (BOOTROM_ADDR_WIDTH),
         .DATA_WIDTH   (32),
         .MEM_INIT_FILE(MEM_INIT_FILE)
     ) u_bootrom (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s0_awaddr[15:0]),
+        .axi_awaddr  (s0_awaddr[BOOTROM_ADDR_WIDTH-1:0]),
         .axi_awprot  (s0_awprot),
         .axi_awvalid (s0_awvalid),
         .axi_awready (s0_awready),
@@ -264,7 +298,7 @@ module soc_core #(
         .axi_bvalid  (s0_bvalid),
         .axi_bready  (s0_bready),
         .axi_bresp   (s0_bresp),
-        .axi_araddr  (s0_araddr[15:0]),
+        .axi_araddr  (s0_araddr[BOOTROM_ADDR_WIDTH-1:0]),
         .axi_arprot  (s0_arprot),
         .axi_arvalid (s0_arvalid),
         .axi_arready (s0_arready),
@@ -274,13 +308,13 @@ module soc_core #(
         .axi_rresp   (s0_rresp)
     );
 
-    axi_ram #(
-        .ADDR_WIDTH(17),
+    sram_axi #(
+        .ADDR_WIDTH(15),
         .DATA_WIDTH(32)
     ) u_sram (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s1_awaddr[16:0]),
+        .axi_awaddr  (s1_awaddr[14:0]),
         .axi_awprot  (s1_awprot),
         .axi_awvalid (s1_awvalid),
         .axi_awready (s1_awready),
@@ -291,7 +325,7 @@ module soc_core #(
         .axi_bvalid  (s1_bvalid),
         .axi_bready  (s1_bready),
         .axi_bresp   (s1_bresp),
-        .axi_araddr  (s1_araddr[16:0]),
+        .axi_araddr  (s1_araddr[14:0]),
         .axi_arprot  (s1_arprot),
         .axi_arvalid (s1_arvalid),
         .axi_arready (s1_arready),
@@ -301,13 +335,11 @@ module soc_core #(
         .axi_rresp   (s1_rresp)
     );
 
-    axi_ram #(
-        .ADDR_WIDTH(24),
-        .DATA_WIDTH(32)
-    ) u_flash (
+    flash_ctrl u_flash (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s2_awaddr[23:0]),
+        // Register AXI port (directly on S2 for addresses < 0x100)
+        .axi_awaddr  (s2_awaddr[7:0]),
         .axi_awprot  (s2_awprot),
         .axi_awvalid (s2_awvalid),
         .axi_awready (s2_awready),
@@ -318,14 +350,41 @@ module soc_core #(
         .axi_bvalid  (s2_bvalid),
         .axi_bready  (s2_bready),
         .axi_bresp   (s2_bresp),
-        .axi_araddr  (s2_araddr[23:0]),
+        .axi_araddr  (s2_araddr[7:0]),
         .axi_arprot  (s2_arprot),
         .axi_arvalid (s2_arvalid),
         .axi_arready (s2_arready),
         .axi_rdata   (s2_rdata),
         .axi_rvalid  (s2_rvalid),
         .axi_rready  (s2_rready),
-        .axi_rresp   (s2_rresp)
+        .axi_rresp   (s2_rresp),
+        // XIP port — directly memory-mapped reads (active when xip_en)
+        .xip_araddr  (32'h0),
+        .xip_arvalid (1'b0),
+        .xip_arready (),
+        .xip_rdata   (),
+        .xip_rvalid  (),
+        .xip_rready  (1'b0),
+        .xip_rresp   (),
+        .xip_awaddr  (32'h0),
+        .xip_awvalid (1'b0),
+        .xip_awready (),
+        .xip_wdata   (32'h0),
+        .xip_wvalid  (1'b0),
+        .xip_wready  (),
+        .xip_wstrb   (4'h0),
+        .xip_bvalid  (),
+        .xip_bready  (1'b0),
+        .xip_bresp   (),
+        // QSPI pins
+        .flash_sclk  (flash_sclk_o),
+        .flash_cs_n  (flash_cs_n_o),
+        .flash_mosi  (flash_mosi_o),
+        .flash_miso  (flash_miso_i),
+        // Status
+        .flash_ready (flash_ready),
+        .jedec_id    (flash_jedec_id),
+        .xip_active  (xip_active)
     );
 
     axi2apb_bridge u_axi2apb (
@@ -433,8 +492,8 @@ module soc_core #(
 
     // UART
     uart_ctrl_apb u_uart (
-        .clk        (clk),
-        .resetn     (resetn),
+        .clk        (clk_i),
+        .resetn     (rst_ni),
         .psel       (psel_uart),
         .penable    (penable_uart),
         .pwrite     (pwrite_uart),
@@ -445,32 +504,32 @@ module soc_core #(
         .prdata     (prdata_uart),
         .pready     (pready_uart),
         .pslverr    (pslverr_uart),
-        .uart_tx    (uart_tx),
-        .uart_rx    (uart_rx),
+        .uart_tx    (uart_tx_o),
+        .uart_rx    (uart_rx_i),
         .irq        (uart_irq)
     );
 
     // Timer
     timer_apb u_timer (
-        .clk(clk),
-        .resetn(resetn),
-        .psel(psel_timer),
-        .penable(penable_timer),
-        .pwrite(pwrite_timer),
-        .paddr(paddr_timer),
-        .pwdata(pwdata_timer),
-        .pstrb(pstrb_timer),
-        .pprot(pprot_timer),
-        .prdata(prdata_timer),
-        .pready(pready_timer),
-        .pslverr(pslverr_timer),
-        .timer_irq(timer_irq)
+        .clk        (clk_i),
+        .resetn     (rst_ni),
+        .psel       (psel_timer),
+        .penable    (penable_timer),
+        .pwrite     (pwrite_timer),
+        .paddr      (paddr_timer),
+        .pwdata     (pwdata_timer),
+        .pstrb      (pstrb_timer),
+        .pprot      (pprot_timer),
+        .prdata     (prdata_timer),
+        .pready     (pready_timer),
+        .pslverr    (pslverr_timer),
+        .timer_irq  (timer_irq)
     );
 
     // GPIO
     gpio_apb u_gpio (
-        .clk        (clk),
-        .resetn     (sys_resetn),
+        .clk        (clk_i),
+        .resetn     (rst_ni),
         .psel       (psel_gpio),
         .penable    (penable_gpio),
         .pwrite     (pwrite_gpio),
@@ -481,9 +540,9 @@ module soc_core #(
         .prdata     (prdata_gpio),
         .pready     (pready_gpio),
         .pslverr    (pslverr_gpio),
-        .gpio_in    (gpio_in),
-        .gpio_out   (gpio_out),
-        .gpio_oe    (gpio_oe),
+        .gpio_in    (gpio_in_i),
+        .gpio_out   (gpio_out_o),
+        .gpio_oe    (gpio_oe_o),
         .gpio_pue   (),
         .gpio_ds    (),
         .iof_en     (),
@@ -493,8 +552,8 @@ module soc_core #(
 
     // SPI Master
     spi_master_apb u_spi (
-        .clk        (clk),
-        .resetn     (sys_resetn),
+        .clk        (clk_i),
+        .resetn     (rst_ni),
         .psel       (psel_spi),
         .penable    (penable_spi),
         .pwrite     (pwrite_spi),
@@ -505,12 +564,67 @@ module soc_core #(
         .prdata     (prdata_spi),
         .pready     (pready_spi),
         .pslverr    (pslverr_spi),
-        .spi_sclk   (spi_sclk),
-        .spi_mosi   (spi_mosi),
-        .spi_miso   (spi_miso),
-        .spi_cs_n   (spi_cs_n),
+        .spi_sclk   (spi_sclk_o),
+        .spi_mosi   (spi_mosi_o),
+        .spi_miso   (spi_miso_i),
+        .spi_cs_n   (spi_cs_n_o),
         .irq        (spi_irq_w)
     );
-    assign gpio_irq = gpio_irq_w;
+
+    debug_apb u_debug (
+        .clk        (clk_i),
+        .resetn     (rst_ni),
+        .psel       (psel_debug),
+        .penable    (penable_debug),
+        .pwrite     (pwrite_debug),
+        .paddr      (paddr_debug),
+        .pwdata     (pwdata_debug),
+        .pstrb      (pstrb_debug),
+        .pprot      (pprot_debug),
+        .prdata     (prdata_debug),
+        .pready     (pready_debug),
+        .pslverr    (pslverr_debug),
+        .jtag_valid (jdbg_valid),
+        .jtag_write (jdbg_write),
+        .jtag_addr  (jdbg_addr),
+        .jtag_wdata (jdbg_wdata),
+        .jtag_wstrb (jdbg_wstrb),
+        .jtag_rdata (jdbg_rdata),
+        .jtag_ready (jdbg_ready),
+        .debug_irq  (debug_irq),
+        .cpu_reset_req(dbg_cpu_reset_req)
+    );
+
+    jtag_dtm u_jtag_dtm (
+        .tck        (jtag_tck_i),
+        .tms        (jtag_tms_i),
+        .tdi        (jtag_tdi_i),
+        .tdo        (jtag_tdo_o),
+        .clk        (clk_i),
+        .resetn     (rst_ni),
+        .dbg_valid  (jdbg_valid),
+        .dbg_write  (jdbg_write),
+        .dbg_addr   (jdbg_addr),
+        .dbg_wdata  (jdbg_wdata),
+        .dbg_wstrb  (jdbg_wstrb),
+        .dbg_rdata  (jdbg_rdata),
+        .dbg_ready  (jdbg_ready)
+    );
+
+    //========================================
+    // Interrupt Aggregation
+    //========================================
+
+    irq_aggregator u_irq_aggregator (
+        .clk        (clk_i),
+        .resetn     (rst_ni),
+        .uart_irq   (uart_irq),
+        .gpio_irq   (gpio_irq_w),
+        .timer_irq  (timer_irq),
+        .spi_irq    (spi_irq_w),
+        .debug_irq  (debug_irq),
+        .eoi        (cpu_eoi),
+        .irq        (cpu_irq)
+    );
 
 endmodule

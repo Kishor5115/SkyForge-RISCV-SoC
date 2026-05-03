@@ -9,9 +9,9 @@
                        │  .rodata (strings)   │
                        │  .data  (globals)    │
                        │  .bss   (zeroed)     │
-            0x00003FFF └──────────────────────┘ ← 16KB ROM limit
+            0x00001FFF └──────────────────────┘ ← 8KB ROM limit
 
-   SRAM     0x00010000┌──────────────────────┐ ← Application target
+   SRAM     0x00010000 ┌──────────────────────┐ ← Application target
                        │  (loaded from flash) │
             0x00017FFF └──────────────────────┘ ← 32KB SRAM limit
 
@@ -30,8 +30,8 @@ ENTRY(_start)
 
 MEMORY
 {
-    /* Boot ROM: 16KB read-only (initialized via $readmemh in simulation) */
-    ROM  (rx)  : ORIGIN = 0x00000000, LENGTH = 16K
+    /* Boot ROM: 8KB read-only (initialized via $readmemh in simulation) */
+    ROM  (rx)  : ORIGIN = 0x00000000, LENGTH = 8K
     
     /* Stack in SRAM (boot firmware uses minimal stack) */
     SRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 32K
@@ -87,7 +87,7 @@ SECTIONS
 
     /* ROM size check */
     ASSERT(_data_end <= ORIGIN(ROM) + LENGTH(ROM),
-        "ERROR: Boot firmware exceeds 16KB ROM limit!")
+        "ERROR: Boot firmware exceeds 8KB ROM limit!")
 
     /DISCARD/ :
     {

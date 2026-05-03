@@ -3,24 +3,28 @@
    
    Complete Memory Picture
 
-   SRAM 0x00000000┌──────────────────────┐ ← CPU fetches first instruction here
-                  │  .init  (_start)     │   must be at exactly 0x00000000
+   SRAM 0x00010000┌──────────────────────┐ ← CPU fetches first instruction from Boot ROM
+                  │  .init  (_start)     │   then jumps here
                   │  .text  (code)       │
                   │  .rodata (constants) │
                   │  .data  (globals)    │ ← pre-loaded by $readmemh(), no copy
                   │  .sdata              │
                   │  .bss   (zeroed)     │ ← startup.s zeros this at boot
                   │  .sbss               │
-                  │  heap ↑  (8KB)       │ ← printf() needs this
+                  │  heap ↑  (2KB)       │
                   │                      │
                   │   ~~~~ free ~~~~     │
                   │                      │
                   │  stack ↓             │ ← grows down from _stack_top
-       0x00020000 └──────────────────────┘ ← _stack_top
+       0x00018000 └──────────────────────┘ ← _stack_top
 
 PERIPH 0x20000000  [ UART  registers ]    ← not memory, pointer access only
        0x20001000  [ Timer registers ]
        0x20002000  [ GPIO  registers ]
+       0x20003000  [ SPI   registers ]    
+       0x20004000  [ Debug registers ]
+       0x40000000  [ Flash registers ]    
+
    ================================================================ */
 
 
@@ -30,13 +34,15 @@ ENTRY(_start)
 
 MEMORY
 {
-    SRAM (rwxa) : ORIGIN = 0x00000000, LENGTH = 128K
+    SRAM (rwxa) : ORIGIN = 0x00010000, LENGTH = 32K
 }
 
-PROVIDE(_uart_base  = 0x20000000);
-PROVIDE(_timer_base = 0x20001000);
-PROVIDE(_gpio_base  = 0x20002000);
-PROVIDE(_spi_base   = 0x20003000);
+PROVIDE(_uart_base   = 0x20000000);
+PROVIDE(_timer_base  = 0x20001000);
+PROVIDE(_gpio_base   = 0x20002000);
+PROVIDE(_spi_base    = 0x20003000);
+PROVIDE(_debug_base  = 0x20004000);
+PROVIDE(_flash_base  = 0x40000000);
 
 
 SECTIONS
@@ -104,8 +110,8 @@ SECTIONS
 
       _stack_top = ORIGIN(SRAM) + LENGTH(SRAM);
 
-      ASSERT(_heap_end <= _stack_top - 0x800, 
-         "ERROR : SRAM overflow - reduce heap or code size")
+      ASSERT(_heap_end <= _stack_top - 0x1000,
+         "ERROR : SRAM overflow - reduce heap or code size (need 4KB min stack)")
       
       /DISCARD/ : 
       {
