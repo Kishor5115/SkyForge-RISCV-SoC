@@ -11,3 +11,11 @@ sim/obj_dir/
 *.swp
 *~
 .DS_Store
+
+my_docs/
+scripts/
+openroad/
+constraints/
+opensta/
+openram/
+

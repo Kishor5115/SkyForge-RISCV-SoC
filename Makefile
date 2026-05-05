@@ -24,10 +24,31 @@ VFLAGS     = -Wall -Wno-fatal --trace --cc --exe --build -j $(shell nproc) \
 #  PHONY TARGETS
 # ==============================================================================
 
-.PHONY: all clean sim sim_gpio sim_uart sim_timer sim_soc help firmware
+.PHONY: all clean sim sim_gpio sim_uart sim_timer sim_spi sim_bootrom sim_soc help firmware yosys sta pnr flow show show_netlist openroad_floorplan openroad_place openroad_cts openroad_route
 
-# Load design-specific PnR configuration
-include $(DESIGN_CONFIG)
+# ── ASIC Flow ─────────────────────────────────────────────────────────────────
+yosys: ## Run Yosys synthesis (OpenLane-style)
+	./scripts/run_yosys.sh
+
+sta: ## Run OpenSTA timing analysis
+	./scripts/run_opensta.sh
+
+pnr: ## Run OpenROAD place-and-route
+	./scripts/run_openroad.sh
+
+openroad_floorplan: ## Run OpenROAD up to floorplan
+	OPENROAD_STOP_AFTER=floorplan ./scripts/run_openroad.sh
+
+openroad_place: ## Run OpenROAD up to placement
+	OPENROAD_STOP_AFTER=place ./scripts/run_openroad.sh
+
+openroad_cts: ## Run OpenROAD up to CTS
+	OPENROAD_STOP_AFTER=cts ./scripts/run_openroad.sh
+
+openroad_route: ## Run OpenROAD up to routing
+	OPENROAD_STOP_AFTER=route ./scripts/run_openroad.sh
+
+flow: yosys sta pnr ## Run full ASIC flow (Synth + STA + PnR)
 
 # ── Default target ────────────────────────────────────────────────────────────
 all: sim
@@ -44,8 +65,22 @@ help: ## Show available targets
 	@echo "║    make sim_gpio    — GPIO testbench only                     ║"
 	@echo "║    make sim_uart    — UART testbench only                     ║"
 	@echo "║    make sim_timer   — Timer testbench only                    ║"
+	@echo "║    make sim_spi     — SPI testbench only                      ║"
+	@echo "║    make sim_bootrom — Boot ROM testbench only                 ║"
 	@echo "║    make sim_soc     — Full SoC integration test (Icarus)      ║"
 	@echo "║    make firmware    — Build all firmware (software, boot, test) ║"
+	@echo "║                                                               ║"
+	@echo "║  ASIC Flow:                                                   ║"
+	@echo "║    make yosys       — Run Yosys synthesis                     ║"
+	@echo "║    make sta         — Run OpenSTA timing analysis             ║"
+	@echo "║    make pnr         — Run OpenROAD place-and-route             ║"
+	@echo "║    make openroad_floorplan — OpenROAD: stop after floorplan   ║"
+	@echo "║    make openroad_place     — OpenROAD: stop after placement   ║"
+	@echo "║    make openroad_cts       — OpenROAD: stop after CTS         ║"
+	@echo "║    make openroad_route     — OpenROAD: stop after routing     ║"
+	@echo "║    make flow        — Run full ASIC flow                      ║"
+	@echo "║    make show        — Show RTL schematic of a module          ║"
+	@echo "║    make show_netlist— Show synthesized netlist schematic      ║"
 	@echo "║                                                               ║"
 	@echo "║  Utility:                                                     ║"
 	@echo "║    make clean       — Clean all build artifacts               ║"
@@ -134,7 +169,7 @@ show: ## Show RTL schematic of a module (e.g. make show MODULE=axi_sram_adapter)
 	@$(YOSYS) -p "read_verilog -sv $(VERILOG_FILES); hierarchy -top $(MODULE); show $(MODULE)"
 
 show_netlist: ## Show gate-level schematic of the synthesized netlist
-	@$(YOSYS) -p "read_verilog $(RESULTS_DIR)/$(DESIGN_NAME).netlist.v; read_liberty -lib $(LIB_FILE); hierarchy -top $(DESIGN_NAME); show $(DESIGN_NAME)"
+	@bash -c 'source flow/env.sh && export GIO_MODULE_DIR=/tmp && yosys -p "read_verilog $$YOSYS_OUT_DIR/results/$$DESIGN_NAME.synth.v; read_liberty -lib $$STD_CELL_LIB; hierarchy -top $$DESIGN_NAME; show $$DESIGN_NAME"'
 
 # ==============================================================================
 #  CLEANUP

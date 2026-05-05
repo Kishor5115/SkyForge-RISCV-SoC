@@ -5,7 +5,7 @@
  *   32KB = 8192 words × 32 bits, ADDR_WIDTH = 15
  *
  * Simulation : behavioral register-file model (1-cycle read latency)
- * Synthesis  : 8× sky130_sram_4kbyte_1rw1r_32x1024_8 OpenRAM macros
+ * Synthesis  : 8× sky130_sram_4kbyte_1rw_32x1024_8 OpenRAM macros
  *              with 3-bit bank select from addr[14:12]
  */
 module sram_axi #(
@@ -63,10 +63,8 @@ module sram_axi #(
 
 `ifdef SYNTHESIS
     // ── 8× 4KB OpenRAM banks ────────────────────────────────────
-    logic [2:0] bank_sel_wr, bank_sel_rd, bank_sel_rd_d;
+    logic [2:0] bank_sel_rd_d;
     logic [DATA_WIDTH-1:0] bank_dout [0:NUM_BANKS-1];
-
-    assign bank_sel_wr = sram_addr0[WORD_AW-1:BANK_AW];
 
     always_ff @(posedge clk)
         if (!sram_csb0 && sram_web0)
@@ -78,20 +76,24 @@ module sram_axi #(
     generate
         for (gi = 0; gi < NUM_BANKS; gi++) begin : gen_sram_bank
             logic bank_csb0;
-            assign bank_csb0 = sram_csb0 | (sram_addr0[WORD_AW-1:BANK_AW] != gi[2:0]);
+            logic [BANK_AW:0] bank_addr0;
+            logic [DATA_WIDTH:0] bank_din0;
+            logic [DATA_WIDTH:0] bank_dout0;
 
-            sky130_sram_4kbyte_1rw1r_32x1024_8 u_bank (
+            assign bank_csb0 = sram_csb0 | (sram_addr0[WORD_AW-1:BANK_AW] != gi[2:0]);
+            assign bank_addr0 = {1'b0, sram_addr0[BANK_AW-1:0]};
+            assign bank_din0 = {1'b0, sram_din0};
+            assign bank_dout[gi] = bank_dout0[DATA_WIDTH-1:0];
+
+            sky130_sram_4kbyte_1rw_32x1024_8 u_bank (
                 .clk0   (clk),
                 .csb0   (bank_csb0),
                 .web0   (sram_web0),
                 .wmask0 (sram_wmask0),
-                .addr0  (sram_addr0[BANK_AW-1:0]),
-                .din0   (sram_din0),
-                .dout0  (bank_dout[gi]),
-                .clk1   (clk),
-                .csb1   (1'b1),
-                .addr1  (10'd0),
-                .dout1  ()
+                .spare_wen0 (1'b0),
+                .addr0  (bank_addr0),
+                .din0   (bank_din0),
+                .dout0  (bank_dout0)
             );
         end
     endgenerate

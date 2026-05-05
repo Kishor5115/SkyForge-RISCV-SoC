@@ -1,0 +1,159 @@
+
+79. Executing CHECK pass (checking for obvious problems).
+Checking module soc_top...
+Warning: Wire soc_top.\uart_tx is used but has no driver.
+Warning: Wire soc_top.\trap is used but has no driver.
+Warning: Wire soc_top.\spi_sclk is used but has no driver.
+Warning: Wire soc_top.\spi_mosi is used but has no driver.
+Warning: Wire soc_top.\spi_cs_n [3] is used but has no driver.
+Warning: Wire soc_top.\spi_cs_n [2] is used but has no driver.
+Warning: Wire soc_top.\spi_cs_n [1] is used but has no driver.
+Warning: Wire soc_top.\spi_cs_n [0] is used but has no driver.
+Warning: Wire soc_top.\jtag_tdo is used but has no driver.
+Warning: Wire soc_top.\gpio_out [31] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [30] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [29] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [28] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [27] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [26] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [25] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [24] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [23] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [22] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [21] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [20] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [19] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [18] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [17] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [16] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [15] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [14] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [13] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [12] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [11] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [10] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [9] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [8] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [7] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [6] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [5] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [4] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [3] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [2] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [1] is used but has no driver.
+Warning: Wire soc_top.\gpio_out [0] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [31] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [30] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [29] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [28] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [27] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [26] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [25] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [24] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [23] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [22] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [21] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [20] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [19] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [18] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [17] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [16] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [15] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [14] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [13] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [12] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [11] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [10] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [9] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [8] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [7] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [6] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [5] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [4] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [3] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [2] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [1] is used but has no driver.
+Warning: Wire soc_top.\gpio_oe [0] is used but has no driver.
+Warning: Wire soc_top.\flash_sclk is used but has no driver.
+Warning: Wire soc_top.\flash_mosi is used but has no driver.
+Warning: Wire soc_top.\flash_cs_n is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116321 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116319 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[7].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116317 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116315 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116313 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[6].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116311 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116309 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116307 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[5].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116305 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116303 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116301 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[4].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116299 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116297 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116295 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[3].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116293 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116291 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116289 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[2].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116287 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116285 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116283 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[1].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116281 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.sram_wmask0[3] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.sram_wmask0[2] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.sram_wmask0[1] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.sram_wmask0[0] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.sram_web0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116279 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116277 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[31] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[30] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[29] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[28] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[27] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[26] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[25] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[24] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[23] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[22] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[21] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[20] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[19] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[18] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[17] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[16] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[15] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[14] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[13] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[12] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[11] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[10] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[9] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[8] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[7] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[6] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[5] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[4] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[3] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[2] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[1] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_din0[0] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_csb0 is used but has no driver.
+Warning: Wire soc_top.$auto$hilomap.cc:47:hilomap_worker$116275 is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[9] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[8] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[7] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[6] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[5] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[4] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[3] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[2] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[1] is used but has no driver.
+Warning: Wire soc_top.\u_soc_core.u_sram.gen_sram_bank[0].bank_addr0[0] is used but has no driver.
+Found and reported 155 problems.
