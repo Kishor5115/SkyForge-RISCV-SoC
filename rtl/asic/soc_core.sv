@@ -1,6 +1,6 @@
 module soc_core #(
     parameter MEM_INIT_FILE       = "",
-    parameter BOOTROM_ADDR_WIDTH  = 13,  // 8KB (2^13 bytes = 0x0000-0x1FFF)
+    parameter BOOTROM_ADDR_WIDTH  = 8,  // 256 bytes (2^8 bytes = 0x00-0xFF)
     parameter PROGADDR_IRQ        = 32'h00010010 // Default: SRAM
 )(
     input  logic         clk_i,
@@ -188,7 +188,7 @@ module soc_core #(
         .ENABLE_IRQ_TIMER  (1),
         .PROGADDR_RESET    (32'h0000_0000),    // Boot ROM reset vector
         .PROGADDR_IRQ      (PROGADDR_IRQ),    // IRQ vector in SRAM (linker: .org 0x10 in SRAM)
-        .STACKADDR         (32'h0001_7FFC)     // Top of 32KB SRAM
+        .STACKADDR         (32'h0001_3FFC)     // Top of 16KB SRAM
     ) u_cpu (
         .clk            (clk_i),
         .resetn         (rst_ni),
@@ -309,12 +309,12 @@ module soc_core #(
     );
 
     sram_axi #(
-        .ADDR_WIDTH(15),
+        .ADDR_WIDTH(14),
         .DATA_WIDTH(32)
     ) u_sram (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s1_awaddr[14:0]),
+        .axi_awaddr  (s1_awaddr[13:0]),
         .axi_awprot  (s1_awprot),
         .axi_awvalid (s1_awvalid),
         .axi_awready (s1_awready),
@@ -325,7 +325,7 @@ module soc_core #(
         .axi_bvalid  (s1_bvalid),
         .axi_bready  (s1_bready),
         .axi_bresp   (s1_bresp),
-        .axi_araddr  (s1_araddr[14:0]),
+        .axi_araddr  (s1_araddr[13:0]),
         .axi_arprot  (s1_arprot),
         .axi_arvalid (s1_arvalid),
         .axi_arready (s1_arready),

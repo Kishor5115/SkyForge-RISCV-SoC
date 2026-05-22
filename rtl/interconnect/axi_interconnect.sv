@@ -3,8 +3,8 @@
  * Routes single AXI master (CPU) to 4 slaves with address-based multiplexing
  *
  * Address Map (Caravel / sky130 ASIC target):
- *   Slave 0 (Boot ROM) : 0x00000000 - 0x00003FFF  (16KB — synthesized ROM)
- *   Slave 1 (SRAM)     : 0x00010000 - 0x00017FFF  (32KB — 8× OpenRAM 4KB)
+ *   Slave 0 (Boot ROM) : 0x00000000 - 0x000000FF  (256B — synthesized ROM)
+ *   Slave 1 (SRAM)     : 0x00010000 - 0x00013FFF  (16KB — 4× OpenRAM 4KB)
  *   Slave 2 (Flash XIP) : 0x40000000 - 0x40FFFFFF  (16MB — QSPI flash ctrl)
  *   Slave 3 (APB)      : 0x20000000 - 0x2000FFFF  (64KB — peripherals)
  *
@@ -48,7 +48,7 @@ module axi_interconnect (
     output logic [31:0] m_axi_rdata,
 
     //--------------------------------------------------------
-    //? Slave 0 : Boot ROM ( 0x00000000 - 0x00003FFF )  16KB
+    //? Slave 0 : Boot ROM ( 0x00000000 - 0x000000FF )  256 Bytes
     //--------------------------------------------------------
 
     output logic        s0_axi_awvalid,
@@ -76,7 +76,7 @@ module axi_interconnect (
     input  logic [31:0] s0_axi_rdata,
 
     //--------------------------------------------------------
-    //? Slave 1 : SRAM ( 0x00010000 - 0x00017FFF )  32KB OpenRAM
+    //? Slave 1 : SRAM ( 0x00010000 - 0x00013FFF )  16KB OpenRAM
     //--------------------------------------------------------
 
     output logic        s1_axi_awvalid,
@@ -165,8 +165,8 @@ module axi_interconnect (
     //?  Slave Encoding
     //--------------------------------------------------------
 
-    localparam logic [1:0] SEL_S0 = 2'b00; // 0x00000000 - 0x00003FFF  (16KB Boot ROM)
-    localparam logic [1:0] SEL_S1 = 2'b01; // 0x00010000 - 0x00017FFF  (32KB SRAM)
+    localparam logic [1:0] SEL_S0 = 2'b00; // 0x00000000 - 0x000000FF  (256B Boot ROM)
+    localparam logic [1:0] SEL_S1 = 2'b01; // 0x00010000 - 0x00013FFF  (16KB SRAM)
     localparam logic [1:0] SEL_S2 = 2'b10; // 0x40000000 - 0x40FFFFFF  (Flash XIP)
     localparam logic [1:0] SEL_S3 = 2'b11; // 0x20000000 - 0x2000FFFF  (APB)
 
@@ -182,26 +182,26 @@ module axi_interconnect (
     logic       aw_decerr,    ar_decerr;
 
     // Write address decode
-    assign aw_slave_sel = (m_axi_awaddr >= 32'h00000000 && m_axi_awaddr < 32'h00004000) ? SEL_S0 :
-                          (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00018000) ? SEL_S1 :
+    assign aw_slave_sel = (m_axi_awaddr >= 32'h00000000 && m_axi_awaddr < 32'h00000100) ? SEL_S0 :
+                          (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00014000) ? SEL_S1 :
                           (m_axi_awaddr >= 32'h40000000 && m_axi_awaddr < 32'h41000000) ? SEL_S2 :
                           (m_axi_awaddr >= 32'h20000000 && m_axi_awaddr < 32'h20010000) ? SEL_S3 :
                                                                                            SEL_S0;
 
-    assign aw_decerr    = !((m_axi_awaddr >= 32'h00000000 && m_axi_awaddr < 32'h00004000) ||
-                            (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00018000) ||
+    assign aw_decerr    = !((m_axi_awaddr >= 32'h00000000 && m_axi_awaddr < 32'h00000100) ||
+                            (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00014000) ||
                             (m_axi_awaddr >= 32'h40000000 && m_axi_awaddr < 32'h41000000) ||
                             (m_axi_awaddr >= 32'h20000000 && m_axi_awaddr < 32'h20010000));
 
     // Read address decode
-    assign ar_slave_sel = (m_axi_araddr >= 32'h00000000 && m_axi_araddr < 32'h00004000) ? SEL_S0 :
-                          (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00018000) ? SEL_S1 :
+    assign ar_slave_sel = (m_axi_araddr >= 32'h00000000 && m_axi_araddr < 32'h00000100) ? SEL_S0 :
+                          (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00014000) ? SEL_S1 :
                           (m_axi_araddr >= 32'h40000000 && m_axi_araddr < 32'h41000000) ? SEL_S2 :
                           (m_axi_araddr >= 32'h20000000 && m_axi_araddr < 32'h20010000) ? SEL_S3 :
                                                                                            SEL_S0;
 
-    assign ar_decerr    = !((m_axi_araddr >= 32'h00000000 && m_axi_araddr < 32'h00004000) ||
-                            (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00018000) ||
+    assign ar_decerr    = !((m_axi_araddr >= 32'h00000000 && m_axi_araddr < 32'h00000100) ||
+                            (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00014000) ||
                             (m_axi_araddr >= 32'h40000000 && m_axi_araddr < 32'h41000000) ||
                             (m_axi_araddr >= 32'h20000000 && m_axi_araddr < 32'h20010000));
 

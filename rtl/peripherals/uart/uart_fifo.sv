@@ -54,11 +54,11 @@ module uart_fifo #(
     begin
         if(!resetn)
         begin
-            wr_ptr = '0;
+            wr_ptr <= '0;
         end
         else if(wr_en && !full)
         begin
-            mem[wr_addr] = wr_data;
+            mem[wr_addr] <= wr_data;
             wr_ptr <= wr_ptr + 1;
         end
     end
@@ -68,7 +68,7 @@ module uart_fifo #(
     begin
         if(!resetn)
         begin
-            rd_ptr = '0;
+            rd_ptr <= '0;
         end
         else if(rd_en && !empty)
         begin

@@ -1,21 +1,40 @@
-# Simulation artifacts
-*.vvp
-*.vcd
-*.trace
-obj_dir/
-sim/obj_dir/
-*.log
+# Build artifacts
+firmware/build/
+*.o
+*.a
+*.elf
+*.hex
+*.lst
 
-# Editor/IDE files
+# Simulation
+sim/work/
+sim/*.vcd
+sim/*.wdb
+sim/*.log
+
+# IDE files
 .vscode/
+.codex/
+.agents/
+
+# for now pd folders
+flow/logs/
+*.rpt
+*.rpt.txt
+openlane/
+openram/
+scripts/
+
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Temporary
 *.swp
+*.swo
 *~
 .DS_Store
-
-my_docs/
-scripts/
-openroad/
-constraints/
-opensta/
-openram/
 

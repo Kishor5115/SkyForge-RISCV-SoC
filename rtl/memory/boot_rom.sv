@@ -58,10 +58,8 @@ module bootrom #(
     initial begin
         for (int i = 0; i < MEM_DEPTH; i++)
             rom[i] = 32'h0000_0013;  // NOP (addi x0, x0, 0) as default
-`ifndef SYNTHESIS
         if (MEM_INIT_FILE != "")
             $readmemh(MEM_INIT_FILE, rom);
-`endif
     end
 
     // ── Read Channel — single-cycle latency ──────────────────

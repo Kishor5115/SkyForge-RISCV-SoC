@@ -5,23 +5,23 @@
 
         +----------Local Count, excluding submodules.
         | 
-    18614 wires
-    23814 wire bits
+    18596 wires
+    23796 wire bits
       415 public wires
      5148 public wire bits
        20 ports
       116 port bits
-    23153 cells
-     4921   $_ANDNOT_
-      955   $_AND_
-     6971   $_MUX_
-      545   $_NAND_
-      541   $_NOR_
-      563   $_NOT_
-      593   $_ORNOT_
-     3097   $_OR_
-      171   $_XNOR_
-      567   $_XOR_
+    23135 cells
+     4896   $_ANDNOT_
+      951   $_AND_
+     6975   $_MUX_
+      527   $_NAND_
+      546   $_NOR_
+      566   $_NOT_
+      607   $_ORNOT_
+     3099   $_OR_
+      175   $_XNOR_
+      564   $_XOR_
       610   sky130_fd_sc_hd__dfrtp_1
      1393   sky130_fd_sc_hd__dfxtp_1
      2218   sky130_fd_sc_hd__edfxtp_1

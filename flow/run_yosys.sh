@@ -6,6 +6,7 @@ FLOW_ROOT="$(cd "$(dirname "$0")" && pwd)"
 source "$FLOW_ROOT/env.sh"
 
 mkdir -p "$YOSYS_OUT_DIR/tmp" "$YOSYS_OUT_DIR/results" "$YOSYS_OUT_DIR/reports" "$YOSYS_OUT_DIR/logs"
+mkdir -p "$FLOW_ROOT/logs"
 
 shopt -s nullglob
 verilog_files=(
@@ -42,4 +43,20 @@ if [[ -f "$SRAM_LIB" ]]; then
 	export EXTRA_LIBS="$SRAM_LIB"
 fi
 
-yosys -c "$FLOW_ROOT/yosys/scripts/synth.tcl" | tee "$YOSYS_OUT_DIR/logs/yosys.log"
+LOG_FILE="$FLOW_ROOT/logs/yosys_$(date +%Y%m%d_%H%M%S).log"
+
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║  Yosys Synthesis                                              ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║  Design : $DESIGN_NAME"
+echo "║  PDK    : $STD_CELL_LIBRARY"
+echo "║  Files  : ${#verilog_files[@]} RTL sources"
+echo "║  Strategy: $SYNTH_STRATEGY"
+echo "║  Log    : $LOG_FILE"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+
+yosys -c "$FLOW_ROOT/yosys/scripts/synth.tcl" 2>&1 | tee "$LOG_FILE"
+
+echo ""
+echo "✓ Synthesis finished. Netlist: $SAVE_NETLIST"
+echo "✓ Log saved to: $LOG_FILE"
