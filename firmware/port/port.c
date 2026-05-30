@@ -172,13 +172,13 @@ void xPortStartFirstTask( void )
 
         /* Restore q-registers */
         "lw   t0, 33*4(sp)      \n"
-        ".insn r 0x0B, 0, 1, x0, x3, t0 \n"
+        ".insn r 0x0B, 0, 1, x3, t0, x0 \n"
         "lw   t0, 32*4(sp)      \n"
-        ".insn r 0x0B, 0, 1, x0, x2, t0 \n"
+        ".insn r 0x0B, 0, 1, x2, t0, x0 \n"
         "lw   t0, 31*4(sp)      \n"
-        ".insn r 0x0B, 0, 1, x0, x1, t0 \n"
+        ".insn r 0x0B, 0, 1, x1, t0, x0 \n"
         "lw   t0, 30*4(sp)      \n"
-        ".insn r 0x0B, 0, 1, x0, x0, t0 \n"
+        ".insn r 0x0B, 0, 1, x0, t0, x0 \n"
 
         /* Pop the context frame */
         "addi sp, sp, %0        \n"
@@ -188,12 +188,11 @@ void xPortStartFirstTask( void )
         "li   t0, 0xFFFFFFF7    \n"
         ".insn r 0x0B, 0, 3, x0, t0, x0 \n"
 
-        /* Debug breadcrumb: publish restored return address to GPIO_OUT. */
-        "lui  t1, 0x20002       \n"
-        "sw   ra, 12(t1)        \n"
-
-        /* Jump to the task via q0 */
-        ".insn r 0x0B, 0, 2, x0, x0, x0 \n"
+        /* Jump to the task via ra (which contains pxCode).
+         * We CANNOT use retirq (q0) here because if the timer interrupt
+         * fires immediately after maskirq, q0 will be overwritten by the
+         * interrupted PC, and pxCode would be lost. ra is preserved. */
+        "ret                    \n"
 
         :
         : "i"(portCONTEXT_WORDS * 4)

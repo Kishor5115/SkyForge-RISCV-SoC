@@ -75,26 +75,26 @@ void vApplicationMallocFailedHook(void)
 }
 
 /* ──────────────────────────────────────────────────────────────────
- * Demo Task A — toggles GPIO bit 0 every 500 ms
+ * Demo Task A — toggles GPIO bit 0 every 10 ms
  * ────────────────────────────────────────────────────────────────── */
 static void vTaskA(void *pvParams)
 {
     (void)pvParams;
     for (;;) {
         GPIO_OUT ^= 0x01;
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 /* ──────────────────────────────────────────────────────────────────
- * Demo Task B — toggles GPIO bit 1 every 1000 ms
+ * Demo Task B — toggles GPIO bit 1 every 20 ms
  * ────────────────────────────────────────────────────────────────── */
 static void vTaskB(void *pvParams)
 {
     (void)pvParams;
     for (;;) {
         GPIO_OUT ^= 0x02;
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 

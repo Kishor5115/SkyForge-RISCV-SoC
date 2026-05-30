@@ -10,7 +10,7 @@
  */
 
 #define picorv32_getq_insn(rd, qs)   .insn r 0x0B, 0, 0, rd, qs, x0
-#define picorv32_setq_insn(qd, rs)   .insn r 0x0B, 0, 1, x0, qd, rs
+#define picorv32_setq_insn(qd, rs)   .insn r 0x0B, 0, 1, qd, rs, x0
 #define picorv32_retirq_insn()       .insn r 0x0B, 0, 2, x0, x0, x0
 #define picorv32_maskirq_insn(rd,rs) .insn r 0x0B, 0, 3, rd, rs, x0
 

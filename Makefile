@@ -6,6 +6,9 @@
 # ── Tool Paths ────────────────────────────────────────────────────────────────
 IVERILOG   = iverilog
 VVP        = vvp
+
+# Tools used by helper targets
+YOSYS     ?= yosys
 # ── Directory Layout ──────────────────────────────────────────────────────────
 RTL_DIR    = rtl
 TB_DIR     = tb
@@ -24,11 +27,11 @@ VFLAGS     = -Wall -Wno-fatal --trace --cc --exe --build -j $(shell nproc) \
 #  PHONY TARGETS
 # ==============================================================================
 
-.PHONY: all clean sim sim_gpio sim_uart sim_timer sim_spi sim_bootrom sim_soc \
+.PHONY: all clean sim sim_gpio sim_uart sim_timer sim_spi sim_soc sim_soc_new_tb \
 	help firmware \
 	yosys sta pnr flow \
 	pd-synth pd-sta pd-floorplan pd-place pd-cts pd-route pd-pnr pd-flow \
-	openlane openlane-floorplan \
+	openlane \
 	show show_netlist clean_pd
 
 # ==============================================================================
@@ -128,10 +131,9 @@ OPENLANE_DOCKER_RUN := docker run --rm \
 	$(OPENLANE_IMAGE_NAME)
 
 openlane-floorplan: ## Run OpenLane until floorplan
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: OpenLane Floorplan"
-	@echo "══════════════════════════════════════════════════════════════"
-	$(OPENLANE_DOCKER_RUN) sh -c "OPENLANE_ROOT=/openlane tclsh $(HOME)/riscv-soc/$(OPENLANE_DESIGN)/run_floorplan.tcl"
+	@echo "ERROR: openlane-floorplan target is not supported in this repo."
+	@echo "Use: make -C openlane run DESIGN=soc_core_prod"
+	@exit 2
 
 openlane: ## Run full OpenLane flow
 	@echo "══════════════════════════════════════════════════════════════"
@@ -165,9 +167,9 @@ help: ## Show available targets
 	@echo "║    make sim_uart    — UART testbench only                     ║"
 	@echo "║    make sim_timer   — Timer testbench only                    ║"
 	@echo "║    make sim_spi     — SPI testbench only                      ║"
-	@echo "║    make sim_bootrom — Boot ROM testbench only                 ║"
 	@echo "║    make sim_soc     — Full SoC integration test (Icarus)      ║"
-	@echo "║    make firmware    — Build all firmware 					   ║"
+	@echo "║    make sim_soc_new_tb — SoC bring-up smoke test (Icarus)     ║"
+	@echo "║    make firmware    — Build firmware apps (default + tests)   ║"
 	@echo "║                                                               ║"
 	@echo "║  ASIC Flow (modular):                                         ║"
 	@echo "║    make pd-synth      — Yosys synthesis                       ║"
@@ -198,7 +200,7 @@ help: ## Show available targets
 # ==============================================================================
 
 # ── Run all testbenches ───────────────────────────────────────────────────────
-sim: sim_gpio sim_uart sim_timer sim_spi sim_bootrom sim_integration
+sim: sim_gpio sim_uart sim_timer sim_spi sim_soc
 	@echo "============================================="
 	@echo "  ✓ All Testbenches Completed Successfully!"
 	@echo "============================================="
@@ -235,37 +237,50 @@ $(SIM_DIR)/tb_spi.vvp: $(RTL_DIR)/peripherals/spi/spi_master_apb.sv $(TB_DIR)/tb
 	mkdir -p $(SIM_DIR)
 	$(IVERILOG) $(IVFLAGS) -o $@ $^
 
-# ── Boot ROM ──────────────────────────────────────────────────────────────────
-sim_bootrom: $(SIM_DIR)/tb_bootrom.vvp
-	$(MAKE) -C firmware boot_rom
-	cp firmware/build/boot_rom.hex ./bootrom.hex
-	$(VVP) $<
+# ── SoC Integration ─────────────────────────────────────────────────────────-
+sim_soc: $(SIM_DIR)/soc_top_tb.vvp firmware_integration_test
+	@echo "Preparing BootROM init hex for soc_top_tb..."
+	cp firmware/integration_test.hex $(SIM_DIR)/integration_test.hex
+	@echo "Running SoC integration simulation (Icarus)..."
+	$(VVP) $(SIM_DIR)/soc_top_tb.vvp
 
-$(SIM_DIR)/tb_bootrom.vvp: $(RTL_DIR)/memory/bootrom.sv $(TB_DIR)/tb_bootrom.sv
-	mkdir -p $(SIM_DIR)
-	$(IVERILOG) $(IVFLAGS) -o $@ $^
-
-# ── SoC Integration ──────────────────────────────────────────────────────────
-sim_soc: $(SIM_DIR)/soc_integration_tb.vvp
-	@echo "Building integration firmware..."
-	$(MAKE) -C firmware integration_test
-	cp firmware/build/integration_test_boot.hex $(SIM_DIR)/integration_test.hex
-	@echo "Running integration simulation..."
-	$(VVP) $< +MEM_INIT_FILE=$(SIM_DIR)/integration_test.hex
-
-$(SIM_DIR)/soc_integration_tb.vvp: $(RTL_DIR)/core/*.sv $(RTL_DIR)/memory/*.sv $(RTL_DIR)/interconnect/*.sv $(RTL_DIR)/peripherals/*/*.sv $(RTL_DIR)/asic/*.sv $(RTL_DIR)/soc_top.sv $(TB_DIR)/soc_top_tb.sv
+$(SIM_DIR)/soc_top_tb.vvp: $(RTL_DIR)/core/*.sv $(RTL_DIR)/memory/*.sv $(RTL_DIR)/interconnect/*.sv $(RTL_DIR)/peripherals/*/*.sv $(RTL_DIR)/asic/*.sv $(RTL_DIR)/soc_top.sv $(TB_DIR)/soc_top_tb.sv
 	mkdir -p $(SIM_DIR)
 	$(IVERILOG) $(IVFLAGS) -s soc_top_tb -o $@ $^
 
+# ── SoC Bring-Up (new lightweight TB, UART PASS/FAIL only) ───────────────────-
+sim_soc_new_tb: $(SIM_DIR)/soc_top_bringup_tb.vvp firmware_integration_test
+	@echo "Preparing BootROM init hex for soc_top_bringup_tb..."
+	cp firmware/integration_test.hex $(SIM_DIR)/integration_test.hex
+	@echo "Running SoC bring-up simulation (new TB, Icarus)..."
+	$(VVP) $(SIM_DIR)/soc_top_bringup_tb.vvp
+
+$(SIM_DIR)/soc_top_bringup_tb.vvp: $(RTL_DIR)/core/*.sv $(RTL_DIR)/memory/*.sv $(RTL_DIR)/interconnect/*.sv $(RTL_DIR)/peripherals/*/*.sv $(RTL_DIR)/asic/*.sv $(RTL_DIR)/soc_top.sv $(TB_DIR)/soc_top_bringup_tb.sv
+	mkdir -p $(SIM_DIR)
+	$(IVERILOG) $(IVFLAGS) -s soc_top_bringup_tb -o $@ $^
+
 # ── Firmware Build ────────────────────────────────────────────────────────────
-firmware: ## Build all firmware components
-	$(MAKE) -C firmware all software boot_rom integration_test
+firmware: firmware_default firmware_integration_test firmware_test_gpio firmware_periph_test ## Build firmware apps (default + tests)
+
+firmware_default:
+	$(MAKE) -C firmware APP=firmware APP_SRC=main.c all
+
+firmware_integration_test:
+	$(MAKE) -C firmware APP=integration_test APP_SRC=tests/integration_test.c FW_MODE=bootrom all
+
+firmware_test_gpio:
+	$(MAKE) -C firmware APP=test_gpio APP_SRC=tests/test_gpio.c FW_MODE=bootrom all
+
+firmware_periph_test:
+	$(MAKE) -C firmware APP=periph_test APP_SRC=tests/periph_test.c FW_MODE=bootrom all
 
 # ==============================================================================
 #  SCHEMATIC VISUALIZATION
 # ==============================================================================
 
 MODULE ?= soc_core
+
+VERILOG_FILES ?= $(shell find $(RTL_DIR) -type f \( -name '*.sv' -o -name '*.v' \) 2>/dev/null)
 
 show: ## Show RTL schematic of a module (e.g. make show MODULE=axi_sram_adapter)
 	@$(YOSYS) -p "read_verilog -sv $(VERILOG_FILES); hierarchy -top $(MODULE); show $(MODULE)"
@@ -280,3 +295,19 @@ show_netlist: ## Show gate-level schematic of the synthesized netlist
 clean: clean_pd ## Clean all build artifacts
 	rm -rf $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd
 	@echo "✓ All build artifacts cleaned"
+
+# ==============================================================================
+#  DEBUGGING & SIMULATION RUNNERS
+# ==============================================================================
+
+run: ## Run the simulation (Verilator)
+	$(MAKE) -C sim run
+
+openocd: ## Run OpenOCD
+	cd openocd && openocd -f openocd.cfg
+
+gdb: ## Run GDB
+	cd firmware && gdb-multiarch -x ../openocd/gdb_init.cfg firmware.elf
+
+killall: ## Kill all simulation and debug processes
+	killall -9 Vsoc_top openocd gdb-multiarch || true

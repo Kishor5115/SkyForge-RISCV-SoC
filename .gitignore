@@ -5,25 +5,38 @@ firmware/build/
 *.elf
 *.hex
 *.lst
+*.map
+firmware/gdb_session.log
+*.gdb_history
 
 # Simulation
 sim/work/
 sim/*.vcd
 sim/*.wdb
 sim/*.log
+sim/obj_dir*/
+sim/*.vvp
+sim/*_sram.hex
+sim/bootrom.hex
 
 # IDE files
 .vscode/
 .codex/
 .agents/
 
-# for now pd folders
+# ASIC flow outputs
+flow/out/
 flow/logs/
+flow/yosys/out/
 *.rpt
 *.rpt.txt
-openlane/
-openram/
-scripts/
+
+# OpenLane generated outputs (do not ignore sources)
+openlane/designs/*/runs/
+
+# OpenRAM generated outputs (do not ignore sources)
+openram/build/
+openram/__pycache__/
 
 
 # Python cache

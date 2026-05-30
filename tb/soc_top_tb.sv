@@ -44,6 +44,24 @@ module soc_top_tb;
     logic        start_jtag_test = 0;
     logic [31:0] idcode_val;
     logic [8*19-1:0] output_window = '0;
+    logic        seen_uart_apb = 0;
+
+    // -------------------------------------------------------------------------
+    // Early diagnostics (no waveform needed)
+    // -------------------------------------------------------------------------
+    initial begin
+        // Wait for reset to be released
+        wait(rst_n == 1'b1);
+        // Give the reset synchronizer a little time
+        #200;
+
+        // If firmware still hasn't touched UART, print some state to debug
+        if (!seen_uart_apb) begin
+            $display("[TB][DIAG] No UART APB traffic shortly after reset.");
+            $display("[TB][DIAG] CPU dbg_pc = 0x%08X", dut.u_soc_core.dbg_cpu_pc);
+            $display("[TB][DIAG] BootROM[0] = 0x%08X", dut.u_soc_core.u_bootrom.rom[0]);
+        end
+    end
 
     // -------------------------------------------------------------------------
     // Clock & Reset
@@ -108,6 +126,16 @@ module soc_top_tb;
     // To make it 100% reliable, we peek at the UART TX register writes
     // internal to the DUT.
     always @(posedge clk) begin
+        // One-time visibility: did firmware ever touch the UART?
+        if (!seen_uart_apb && dut.u_soc_core.psel_uart && dut.u_soc_core.penable_uart) begin
+            seen_uart_apb <= 1'b1;
+            if (dut.u_soc_core.pwrite_uart) begin
+                $display("[TB] First UART APB WRITE addr=0x%08X data=0x%08X", dut.u_soc_core.paddr_uart, dut.u_soc_core.pwdata_uart);
+            end else begin
+                $display("[TB] First UART APB READ  addr=0x%08X", dut.u_soc_core.paddr_uart);
+            end
+        end
+
         if (dut.u_soc_core.psel_uart && dut.u_soc_core.penable_uart && dut.u_soc_core.pwrite_uart) begin
             if (dut.u_soc_core.paddr_uart[7:0] == 8'h00) begin // UART_TX_DATA
                 $write("%c", dut.u_soc_core.pwdata_uart[7:0]);
@@ -123,6 +151,13 @@ module soc_top_tb;
                     $fatal(1, "Integration Test Failed.");
                 end
             end
+        end
+    end
+
+    // If the CPU traps, fail fast (helps catch bad ROM images / bad mappings)
+    always @(posedge clk) begin
+        if (trap) begin
+            $fatal(1, "[TB] CPU trap asserted.");
         end
     end
 
@@ -217,9 +252,6 @@ module soc_top_tb;
     // Timeout
     // -------------------------------------------------------------------------
     initial begin
-        $dumpfile("sim/soc_integration.vcd");
-        $dumpvars(0, soc_top_tb);
-        
         #50000000; // 50ms timeout
         $display("\n[TB] Simulation Timeout!");
         $fatal(1, "Integration Test Failed.");

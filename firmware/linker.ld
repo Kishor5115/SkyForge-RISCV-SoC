@@ -57,6 +57,9 @@ SECTIONS
         __data_end = .;
     } > SRAM
 
+    /* RISC-V ABI global pointer for small data access */
+    PROVIDE(__global_pointer$ = __data_start + 0x800);
+
     /* ── BSS (zero-initialized) ─────────────────────────────────── */
     .bss (NOLOAD) : ALIGN(4)
     {

@@ -147,9 +147,6 @@ module debug_dm (
             resume_pending_q <= 1'b0;
         end else begin
             resume_pending_q <= dbg_resume_req;
-            // Clear dpc_written after the resume pulse has been sent
-            if (resume_pending_q)
-                dpc_written <= 1'b0;
         end
     end
     assign dbg_set_pc     = dbg_halted && dpc_written;
@@ -310,7 +307,7 @@ module debug_dm (
                         dpc_shadow <= data0;
                         dpc_written <= 1'b1;
                     end else
-                        data0 <= dbg_cpu_pc;  // Read actual CPU PC, not shadow
+                        data0 <= dpc_written ? dpc_shadow : dbg_cpu_pc;
                 end else if (cmd_transfer && cmd_is_dcsr) begin
                     if (cmd_write)
                         dcsr_shadow <= data0;
@@ -324,6 +321,41 @@ module debug_dm (
                 end else begin
                     cmderr <= 3'b010;
                 end
+            end
+
+            // Clear dpc_written after the resume pulse has been sent
+            if (resume_pending_q)
+                dpc_written <= 1'b0;
+
+            // SBA state machine updates
+            if (sba_state != SBA_IDLE) begin
+                if (sba_start_read || sba_start_write)
+                    sbbusyerror <= 1'b1;
+            end
+            if (sba_state == SBA_W_RESP && dbg_axi_bvalid) begin
+                if (dbg_axi_bresp != 2'b00) sberror <= 3'b010;
+                if (sbautoincrement)
+                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
+                                                (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
+            end
+            if (sba_state == SBA_R_RESP && dbg_axi_rvalid) begin
+                if (dbg_axi_rresp != 2'b00) sberror <= 3'b010;
+                case (sbaccess_size)
+                    3'b000: begin
+                        case (sbaddress0[1:0])
+                            2'b00: sbdata0 <= {24'h0, dbg_axi_rdata[7:0]};
+                            2'b01: sbdata0 <= {24'h0, dbg_axi_rdata[15:8]};
+                            2'b10: sbdata0 <= {24'h0, dbg_axi_rdata[23:16]};
+                            default: sbdata0 <= {24'h0, dbg_axi_rdata[31:24]};
+                        endcase
+                    end
+                    3'b001: sbdata0 <= sbaddress0[1] ? {16'h0, dbg_axi_rdata[31:16]}
+                                                     : {16'h0, dbg_axi_rdata[15:0]};
+                    default: sbdata0 <= dbg_axi_rdata;
+                endcase
+                if (sbautoincrement)
+                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
+                                                (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
             end
         end
     end
@@ -391,51 +423,7 @@ module debug_dm (
         end
     end
 
-    always_ff @(posedge clk) begin
-        if (!resetn) begin
-            sbdata0 <= 32'h0;
-        end else begin
-            if (sba_state == SBA_R_RESP && dbg_axi_rvalid) begin
-                case (sbaccess_size)
-                    3'b000: begin
-                        case (sbaddress0[1:0])
-                            2'b00: sbdata0 <= {24'h0, dbg_axi_rdata[7:0]};
-                            2'b01: sbdata0 <= {24'h0, dbg_axi_rdata[15:8]};
-                            2'b10: sbdata0 <= {24'h0, dbg_axi_rdata[23:16]};
-                            default: sbdata0 <= {24'h0, dbg_axi_rdata[31:24]};
-                        endcase
-                    end
-                    3'b001: sbdata0 <= sbaddress0[1] ? {16'h0, dbg_axi_rdata[31:16]}
-                                                     : {16'h0, dbg_axi_rdata[15:0]};
-                    default: sbdata0 <= dbg_axi_rdata;
-                endcase
-                if (sbautoincrement)
-                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
-                                                (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
-            end
-            if (sba_state == SBA_W_RESP && dbg_axi_bvalid) begin
-                if (sbautoincrement)
-                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
-                                                (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
-            end
-        end
-    end
-
-    always_ff @(posedge clk) begin
-        if (!resetn) begin
-            sbbusyerror <= 1'b0;
-            sberror     <= 3'b000;
-        end else begin
-            if (sba_state != SBA_IDLE) begin
-                if (sba_start_read || sba_start_write)
-                    sbbusyerror <= 1'b1;
-            end
-            if (sba_state == SBA_W_RESP && dbg_axi_bvalid && dbg_axi_bresp != 2'b00)
-                sberror <= 3'b010;
-            if (sba_state == SBA_R_RESP && dbg_axi_rvalid && dbg_axi_rresp != 2'b00)
-                sberror <= 3'b010;
-        end
-    end
+    // SBA state updates moved to main DMI always_ff block to avoid multiple drivers
 
     logic [3:0]  sba_wstrb;
     logic [31:0] sba_wdata_aligned;

@@ -56,7 +56,20 @@ _reset_entry:
     /* ── Step 3: Load Stack Pointer ─────────────────────────────── */
     la  sp, _stack_top
 
-    /* ── Step 4: zero the .bss section ─────────────────────────────── */
+    /* ── Step 4: Copy .data from LMA (BootROM) to VMA (SRAM) ───── */
+    la  t0, _data_lma
+    la  t1, _data_start
+    la  t2, _data_end
+data_copy_loop:
+    bge  t1, t2, data_copy_done
+    lw   t3, 0(t0)
+    sw   t3, 0(t1)
+    addi t0, t0, 4
+    addi t1, t1, 4
+    j    data_copy_loop
+data_copy_done:
+
+    /* ── Step 5: zero the .bss section ─────────────────────────────── */
     la  t0, _bss_start
     la  t1, _bss_end
 bss_loop :
@@ -66,10 +79,10 @@ bss_loop :
     j    bss_loop
 bss_done:
 
-    /* ── Step 5: Initialize IRQ mask and peripheral IRQ enables ───────── */
+    /* ── Step 6: Initialize IRQ mask and peripheral IRQ enables ───────── */
     call irq_init
 
-    /* ── Step 6: Call main() ─────────────────────────────── */
+    /* ── Step 7: Call main() ─────────────────────────────── */
     call main
 
     /* If main() returns, loop indefinitely */

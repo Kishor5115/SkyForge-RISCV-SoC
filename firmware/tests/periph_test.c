@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-#include "irq_handler.h"
+#include "irq.h"
 
 volatile int btn_left_flag = 0;
 volatile int btn_right_flag = 0;

@@ -1,6 +1,6 @@
 # ──────────────────────────────────────────────────────────────────
-# Firmware Makefile — PicoRV32 FreeRTOS
-# Usage:  make            — build firmware.elf + firmware.hex
+# Firmware Makefile — PicoRV32 SoC Firmware
+# Usage:  make            — build firmware.elf + firmware.hex (default: FW_MODE=freertos)
 #         make clean      — remove build artifacts
 # ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,12 @@ FREERTOS_DIR   := FreeRTOS-Kernel
 FREERTOS_SRC   := $(FREERTOS_DIR)/
 FREERTOS_MEM   := $(FREERTOS_DIR)/portable/MemMang/
 
+# ── Bare-metal drivers (UART/GPIO/SPI/TIMER/IRQ) ───────────────
+DRIVERS_DIR    := drivers
+
+# ── Common helper headers (shared types/defs) ──────────────────
+LIB_DIR        := lib
+
 # ── Custom PicoRV32 port (NOT the standard RISC-V port) ─────────
 PICORV32_PORT  := port/
 
@@ -25,17 +31,35 @@ LIBC_DIR       := libc/
 
 # ── Compiler / Linker flags ─────────────────────────────────────
 ARCH_FLAGS := -march=rv32im -mabi=ilp32
-CFLAGS     := $(ARCH_FLAGS) -Os -g -Wall -Wextra \
+CFLAGS_BASE := $(ARCH_FLAGS) -Os -g -Wall -Wextra \
               -ffreestanding -ffunction-sections -fdata-sections \
               -isystem $(LIBC_DIR) \
               -I. \
-              -I$(FREERTOS_SRC)/include \
-              -I$(PICORV32_PORT)
+              -I$(LIB_DIR)/inc \
+              -I$(DRIVERS_DIR)/inc \
+                            -I$(PICORV32_PORT)
+
+# Firmware build mode:
+# - freertos: runs from SRAM @0x10000 with FreeRTOS context-switch IRQ wrapper (start.S)
+# - bootrom : runs from BootROM @0x0 with a generic IRQ dispatcher (lib/src/crt0.S)
+FW_MODE ?= freertos
+
+ifeq ($(FW_MODE),freertos)
+    CFLAGS := $(CFLAGS_BASE) -I$(FREERTOS_SRC)/include
+    LINKER_SCRIPT := linker.ld
+    ASM_SRCS := start.S
+else ifeq ($(FW_MODE),bootrom)
+    CFLAGS := $(CFLAGS_BASE)
+    LINKER_SCRIPT := linker_bootrom.ld
+    ASM_SRCS := $(LIB_DIR)/src/crt0.S
+else
+    $(error Unsupported FW_MODE='$(FW_MODE)'; use FW_MODE=freertos or FW_MODE=bootrom)
+endif
 
 ASFLAGS    := $(ARCH_FLAGS) -g
 
-LDFLAGS    := $(ARCH_FLAGS) -nostartfiles -nostdlib -T linker.ld \
-              -Wl,--gc-sections -Wl,-Map,firmware.map -lgcc
+LDFLAGS    := $(ARCH_FLAGS) -nostartfiles -nostdlib -T $(LINKER_SCRIPT) \
+              -Wl,--gc-sections -Wl,-Map,$(APP).map -lgcc
 
 # ── Application selection ────────────────────────────────────────
 # Default app:
@@ -46,16 +70,28 @@ APP      ?= firmware
 APP_SRC  ?= main.c
 
 # ── Sources ──────────────────────────────────────────────────────
-C_SRCS := \
-    $(APP_SRC) \
-    $(LIBC_DIR)/libc.c \
+DRIVER_SRCS := \
+    $(DRIVERS_DIR)/src/uart.c \
+    $(DRIVERS_DIR)/src/gpio.c \
+    $(DRIVERS_DIR)/src/spi.c \
+    $(DRIVERS_DIR)/src/timer.c \
+    $(DRIVERS_DIR)/src/irq.c
+
+FREERTOS_SRCS := \
     $(FREERTOS_SRC)/tasks.c \
     $(FREERTOS_SRC)/queue.c \
     $(FREERTOS_SRC)/list.c \
     $(FREERTOS_MEM)/heap_4.c \
     $(PICORV32_PORT)/port.c
 
-ASM_SRCS := start.S
+C_SRCS := \
+    $(APP_SRC) \
+    $(LIBC_DIR)/libc.c \
+    $(DRIVER_SRCS)
+
+ifeq ($(FW_MODE),freertos)
+  C_SRCS += $(FREERTOS_SRCS)
+endif
 
 # ── Objects ──────────────────────────────────────────────────────
 BUILD_DIR := build
@@ -64,7 +100,8 @@ ASM_OBJS := $(patsubst %.S,$(BUILD_DIR)/%.o,$(notdir $(ASM_SRCS)))
 OBJS     := $(ASM_OBJS) $(C_OBJS)
 
 # VPATH for finding sources in subdirectories
-VPATH := . $(FREERTOS_SRC) $(FREERTOS_MEM) $(PICORV32_PORT) $(LIBC_DIR)
+# Allows selecting APP_SRC from firmware/, firmware/tests/, firmware/boot/, etc.
+VPATH := . tests boot $(LIB_DIR)/src $(DRIVERS_DIR)/src $(FREERTOS_SRC) $(FREERTOS_MEM) $(PICORV32_PORT) $(LIBC_DIR)
 
 TARGET := $(APP)
 
@@ -85,13 +122,9 @@ $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 $(TARGET).elf: $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 
-$(TARGET).hex: $(TARGET).elf
-	$(OBJCOPY) -O verilog $< $@
+$(TARGET).hex: $(TARGET).elf ; $(OBJCOPY) --verilog-data-width=4 -O verilog $< $@
 
 $(TARGET).lst: $(TARGET).elf
 	$(OBJDUMP) -d -S $< > $@
 
-clean:
-	rm -rf $(BUILD_DIR)
-	rm -f $(TARGET).elf $(TARGET).hex $(TARGET).lst $(TARGET).map
-	@echo "Cleaned."
+clean: ; rm -rf $(BUILD_DIR); rm -f $(TARGET).elf $(TARGET).hex $(TARGET).lst $(TARGET).map; echo "Cleaned."
