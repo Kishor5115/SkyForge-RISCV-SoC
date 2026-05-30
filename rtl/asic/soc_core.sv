@@ -1,5 +1,6 @@
 module soc_core #(
     parameter MEM_INIT_FILE       = "",
+    parameter SRAM_INIT_FILE      = "",
     parameter BOOTROM_ADDR_WIDTH  = 8,  // 256 bytes (2^8 bytes = 0x00-0xFF)
     parameter PROGADDR_IRQ        = 32'h00010010 // Default: SRAM
 )(
@@ -57,6 +58,27 @@ module soc_core #(
     logic [31:0] mem_axi_rdata;
     logic [1:0]  mem_axi_bresp;
     logic [1:0]  mem_axi_rresp;
+
+    // Debug AXI master
+    logic        dbg_axi_awvalid;
+    logic        dbg_axi_awready;
+    logic [31:0] dbg_axi_awaddr;
+    logic [2:0]  dbg_axi_awprot;
+    logic        dbg_axi_wvalid;
+    logic        dbg_axi_wready;
+    logic [31:0] dbg_axi_wdata;
+    logic [3:0]  dbg_axi_wstrb;
+    logic        dbg_axi_bvalid;
+    logic        dbg_axi_bready;
+    logic [1:0]  dbg_axi_bresp;
+    logic        dbg_axi_arvalid;
+    logic        dbg_axi_arready;
+    logic [31:0] dbg_axi_araddr;
+    logic [2:0]  dbg_axi_arprot;
+    logic        dbg_axi_rvalid;
+    logic        dbg_axi_rready;
+    logic [31:0] dbg_axi_rdata;
+    logic [1:0]  dbg_axi_rresp;
 
     logic [31:0] cpu_irq;
     logic [31:0] cpu_eoi;
@@ -169,6 +191,17 @@ module soc_core #(
     logic        uart_irq, timer_irq, spi_irq_w, debug_irq;
     logic        gpio_irq_w;
     logic        dbg_cpu_reset_req;
+    logic        dbg_halt_req;
+    logic        dbg_resume_req;
+    logic        dbg_halted;
+    logic        dbg_reg_write;
+    logic        dbg_reg_read;
+    logic [4:0]  dbg_reg_addr;
+    logic [31:0] dbg_reg_wdata;
+    logic [31:0] dbg_reg_rdata;
+    logic [31:0] dbg_cpu_pc;
+    logic        dbg_set_pc;
+    logic [31:0] dbg_set_pc_val;
     // JTAG <-> Debug bridge
     logic        jdbg_valid, jdbg_write, jdbg_ready;
     logic [7:0]  jdbg_addr;
@@ -195,6 +228,17 @@ module soc_core #(
         .trap           (trap_o),
         .irq            (cpu_irq),
         .eoi            (cpu_eoi),
+        .dbg_halt_req   (dbg_halt_req),
+        .dbg_resume_req (dbg_resume_req),
+        .dbg_reg_write  (dbg_reg_write),
+        .dbg_reg_read   (dbg_reg_read),
+        .dbg_reg_addr   (dbg_reg_addr),
+        .dbg_reg_wdata  (dbg_reg_wdata),
+        .dbg_halted     (dbg_halted),
+        .dbg_reg_rdata  (dbg_reg_rdata),
+        .dbg_pc         (dbg_cpu_pc),
+        .dbg_set_pc     (dbg_set_pc),
+        .dbg_set_pc_val (dbg_set_pc_val),
         .mem_axi_awvalid(mem_axi_awvalid),
         .mem_axi_awready(mem_axi_awready),
         .mem_axi_awaddr (mem_axi_awaddr),
@@ -216,28 +260,47 @@ module soc_core #(
         .trace_data     ()
     );
 
-    axi_interconnect u_axi_xbar (
+    axi_interconnect_2m u_axi_xbar (
         .clk            (clk_i),
         .resetn         (rst_ni),
-        .m_axi_awvalid  (mem_axi_awvalid),
-        .m_axi_awready  (mem_axi_awready),
-        .m_axi_awaddr   (mem_axi_awaddr),
-        .m_axi_awprot   (mem_axi_awprot),
-        .m_axi_wvalid   (mem_axi_wvalid),
-        .m_axi_wready   (mem_axi_wready),
-        .m_axi_wdata    (mem_axi_wdata),
-        .m_axi_wstrb    (mem_axi_wstrb),
-        .m_axi_bvalid   (mem_axi_bvalid),
-        .m_axi_bready   (mem_axi_bready),
-        .m_axi_bresp    (mem_axi_bresp),
-        .m_axi_arvalid  (mem_axi_arvalid),
-        .m_axi_arready  (mem_axi_arready),
-        .m_axi_araddr   (mem_axi_araddr),
-        .m_axi_arprot   (mem_axi_arprot),
-        .m_axi_rvalid   (mem_axi_rvalid),
-        .m_axi_rready   (mem_axi_rready),
-        .m_axi_rresp    (mem_axi_rresp),
-        .m_axi_rdata    (mem_axi_rdata),
+        .m0_axi_awvalid (mem_axi_awvalid),
+        .m0_axi_awready (mem_axi_awready),
+        .m0_axi_awaddr  (mem_axi_awaddr),
+        .m0_axi_awprot  (mem_axi_awprot),
+        .m0_axi_wvalid  (mem_axi_wvalid),
+        .m0_axi_wready  (mem_axi_wready),
+        .m0_axi_wdata   (mem_axi_wdata),
+        .m0_axi_wstrb   (mem_axi_wstrb),
+        .m0_axi_bvalid  (mem_axi_bvalid),
+        .m0_axi_bready  (mem_axi_bready),
+        .m0_axi_bresp   (mem_axi_bresp),
+        .m0_axi_arvalid (mem_axi_arvalid),
+        .m0_axi_arready (mem_axi_arready),
+        .m0_axi_araddr  (mem_axi_araddr),
+        .m0_axi_arprot  (mem_axi_arprot),
+        .m0_axi_rvalid  (mem_axi_rvalid),
+        .m0_axi_rready  (mem_axi_rready),
+        .m0_axi_rresp   (mem_axi_rresp),
+        .m0_axi_rdata   (mem_axi_rdata),
+        .m1_axi_awvalid (dbg_axi_awvalid),
+        .m1_axi_awready (dbg_axi_awready),
+        .m1_axi_awaddr  (dbg_axi_awaddr),
+        .m1_axi_awprot  (dbg_axi_awprot),
+        .m1_axi_wvalid  (dbg_axi_wvalid),
+        .m1_axi_wready  (dbg_axi_wready),
+        .m1_axi_wdata   (dbg_axi_wdata),
+        .m1_axi_wstrb   (dbg_axi_wstrb),
+        .m1_axi_bvalid  (dbg_axi_bvalid),
+        .m1_axi_bready  (dbg_axi_bready),
+        .m1_axi_bresp   (dbg_axi_bresp),
+        .m1_axi_arvalid (dbg_axi_arvalid),
+        .m1_axi_arready (dbg_axi_arready),
+        .m1_axi_araddr  (dbg_axi_araddr),
+        .m1_axi_arprot  (dbg_axi_arprot),
+        .m1_axi_rvalid  (dbg_axi_rvalid),
+        .m1_axi_rready  (dbg_axi_rready),
+        .m1_axi_rresp   (dbg_axi_rresp),
+        .m1_axi_rdata   (dbg_axi_rdata),
         .s0_axi_awvalid (s0_awvalid), .s0_axi_awready(s0_awready),
         .s0_axi_awaddr  (s0_awaddr),  .s0_axi_awprot (s0_awprot),
         .s0_axi_wvalid  (s0_wvalid),  .s0_axi_wready (s0_wready),
@@ -310,7 +373,8 @@ module soc_core #(
 
     sram_axi #(
         .ADDR_WIDTH(14),
-        .DATA_WIDTH(32)
+        .DATA_WIDTH(32),
+        .SRAM_INIT_FILE(SRAM_INIT_FILE)
     ) u_sram (
         .clk         (clk_i),
         .resetn      (rst_ni),
@@ -571,7 +635,7 @@ module soc_core #(
         .irq        (spi_irq_w)
     );
 
-    debug_apb u_debug (
+    debug_dm u_debug (
         .clk        (clk_i),
         .resetn     (rst_ni),
         .psel       (psel_debug),
@@ -591,6 +655,36 @@ module soc_core #(
         .jtag_wstrb (jdbg_wstrb),
         .jtag_rdata (jdbg_rdata),
         .jtag_ready (jdbg_ready),
+        .dbg_halt_req (dbg_halt_req),
+        .dbg_resume_req (dbg_resume_req),
+        .dbg_halted (dbg_halted),
+        .dbg_reg_write (dbg_reg_write),
+        .dbg_reg_read (dbg_reg_read),
+        .dbg_reg_addr (dbg_reg_addr),
+        .dbg_reg_wdata (dbg_reg_wdata),
+        .dbg_reg_rdata (dbg_reg_rdata),
+        .dbg_cpu_pc    (dbg_cpu_pc),
+        .dbg_set_pc    (dbg_set_pc),
+        .dbg_set_pc_val(dbg_set_pc_val),
+        .dbg_axi_awvalid (dbg_axi_awvalid),
+        .dbg_axi_awready (dbg_axi_awready),
+        .dbg_axi_awaddr (dbg_axi_awaddr),
+        .dbg_axi_awprot (dbg_axi_awprot),
+        .dbg_axi_wvalid (dbg_axi_wvalid),
+        .dbg_axi_wready (dbg_axi_wready),
+        .dbg_axi_wdata (dbg_axi_wdata),
+        .dbg_axi_wstrb (dbg_axi_wstrb),
+        .dbg_axi_bvalid (dbg_axi_bvalid),
+        .dbg_axi_bready (dbg_axi_bready),
+        .dbg_axi_bresp (dbg_axi_bresp),
+        .dbg_axi_arvalid (dbg_axi_arvalid),
+        .dbg_axi_arready (dbg_axi_arready),
+        .dbg_axi_araddr (dbg_axi_araddr),
+        .dbg_axi_arprot (dbg_axi_arprot),
+        .dbg_axi_rvalid (dbg_axi_rvalid),
+        .dbg_axi_rready (dbg_axi_rready),
+        .dbg_axi_rresp (dbg_axi_rresp),
+        .dbg_axi_rdata (dbg_axi_rdata),
         .debug_irq  (debug_irq),
         .cpu_reset_req(dbg_cpu_reset_req)
     );

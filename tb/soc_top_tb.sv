@@ -63,6 +63,7 @@ module soc_top_tb;
     // -------------------------------------------------------------------------
     soc_top #(
         .MEM_INIT_FILE(MEM_INIT_FILE),
+        .BOOTROM_ADDR_WIDTH(13),
         .PROGADDR_IRQ(32'h00000010) // Run IRQ from BootROM for integration test
     ) dut (
         .clk        (clk),

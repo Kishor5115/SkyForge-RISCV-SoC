@@ -10,7 +10,8 @@
  */
 module sram_axi #(
     parameter ADDR_WIDTH = 14,          // 16KB = 2^14 bytes
-    parameter DATA_WIDTH = 32
+    parameter DATA_WIDTH = 32,
+    parameter SRAM_INIT_FILE = ""       // Optional hex file for simulation preload
 )(
     input  logic                  clk,
     input  logic                  resetn,
@@ -113,7 +114,13 @@ module sram_axi #(
         end
     end
 
-    initial for (int i = 0; i < NUM_WORDS; i++) mem[i] = 32'h0;
+    initial begin
+        for (int i = 0; i < NUM_WORDS; i++) mem[i] = 32'h0;
+`ifndef SYNTHESIS
+        if (SRAM_INIT_FILE != "")
+            $readmemh(SRAM_INIT_FILE, mem);
+`endif
+    end
 `endif
 
     // ── AXI Write FSM ───────────────────────────────────────────

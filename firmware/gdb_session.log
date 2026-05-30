@@ -1,0 +1,7 @@
+_bss_loop () at start.S:332
+332	    blt t0, t1, _bss_loop
+JTAG tap: picorv32.cpu tap/device found: 0x10005001 (mfg: 0x000 (<invalid>), part: 0x0005, ver: 0x1)
+Breakpoint 1 at 0x10414: file main.c, line 81.
+Cannot execute this command while the target is running.
+Use the "interrupt" command to stop the target
+and then try again.

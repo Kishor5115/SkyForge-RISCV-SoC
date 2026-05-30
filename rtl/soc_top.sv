@@ -13,6 +13,8 @@
 
 module soc_top #(
     parameter MEM_INIT_FILE = "",
+    parameter SRAM_INIT_FILE = "",
+    parameter BOOTROM_ADDR_WIDTH = 8,
     parameter PROGADDR_IRQ  = 32'h00010010
 )(
     input  logic        clk,
@@ -68,6 +70,8 @@ module soc_top #(
     // ── SoC Core ────────────────────────────────────────────────
     soc_core #(
         .MEM_INIT_FILE(MEM_INIT_FILE),
+        .SRAM_INIT_FILE(SRAM_INIT_FILE),
+        .BOOTROM_ADDR_WIDTH(BOOTROM_ADDR_WIDTH),
         .PROGADDR_IRQ(PROGADDR_IRQ)
     ) u_soc_core (
         .clk_i        (clk),

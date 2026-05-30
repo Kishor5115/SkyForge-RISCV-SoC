@@ -171,7 +171,7 @@ module axi2apb_bridge (
                     // Check if we can start APB transaction (write takes priority)
                     // Write : both AW and W must be captured
                     if ((aw_captured || (axi_awvalid && axi_awready)) &&  // Allow starting write if AW just captured
-                        (w_captured) || (axi_wvalid && axi_wready))       // Allow starting write if W just captured
+                        (w_captured || (axi_wvalid && axi_wready)))       // Allow starting write if W just captured
                     begin
                         state <= ST_APB_SETUP;
                         is_write_txn <= 1'b1;  // This is a write transaction

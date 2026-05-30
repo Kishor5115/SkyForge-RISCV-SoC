@@ -95,25 +95,29 @@ module jtag_dtm (
 
     // TAP state transitions
     always_ff @(posedge tck) begin
-        case (tap_state)
-            TEST_LOGIC_RESET: if (tms) tap_state <= TEST_LOGIC_RESET; else tap_state <= RUN_TEST_IDLE;
-            RUN_TEST_IDLE:    if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
-            SELECT_DR_SCAN:   if (tms) tap_state <= SELECT_IR_SCAN;   else tap_state <= CAPTURE_DR;
-            CAPTURE_DR:       if (tms) tap_state <= EXIT1_DR;         else tap_state <= SHIFT_DR;
-            SHIFT_DR:         if (tms) tap_state <= EXIT1_DR;         else tap_state <= SHIFT_DR;
-            EXIT1_DR:         if (tms) tap_state <= UPDATE_DR;        else tap_state <= PAUSE_DR;
-            PAUSE_DR:         if (tms) tap_state <= EXIT2_DR;         else tap_state <= PAUSE_DR;
-            EXIT2_DR:         if (tms) tap_state <= UPDATE_DR;        else tap_state <= SHIFT_DR;
-            UPDATE_DR:        if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
-            SELECT_IR_SCAN:   if (tms) tap_state <= TEST_LOGIC_RESET; else tap_state <= CAPTURE_IR;
-            CAPTURE_IR:       if (tms) tap_state <= EXIT1_IR;         else tap_state <= SHIFT_IR;
-            SHIFT_IR:         if (tms) tap_state <= EXIT1_IR;         else tap_state <= SHIFT_IR;
-            EXIT1_IR:         if (tms) tap_state <= UPDATE_IR;        else tap_state <= PAUSE_IR;
-            PAUSE_IR:         if (tms) tap_state <= EXIT2_IR;         else tap_state <= PAUSE_IR;
-            EXIT2_IR:         if (tms) tap_state <= UPDATE_IR;        else tap_state <= SHIFT_IR;
-            UPDATE_IR:        if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
-            default:          tap_state <= TEST_LOGIC_RESET;
-        endcase
+        if (!resetn) begin
+            tap_state <= TEST_LOGIC_RESET;
+        end else begin
+            case (tap_state)
+                TEST_LOGIC_RESET: if (tms) tap_state <= TEST_LOGIC_RESET; else tap_state <= RUN_TEST_IDLE;
+                RUN_TEST_IDLE:    if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
+                SELECT_DR_SCAN:   if (tms) tap_state <= SELECT_IR_SCAN;   else tap_state <= CAPTURE_DR;
+                CAPTURE_DR:       if (tms) tap_state <= EXIT1_DR;         else tap_state <= SHIFT_DR;
+                SHIFT_DR:         if (tms) tap_state <= EXIT1_DR;         else tap_state <= SHIFT_DR;
+                EXIT1_DR:         if (tms) tap_state <= UPDATE_DR;        else tap_state <= PAUSE_DR;
+                PAUSE_DR:         if (tms) tap_state <= EXIT2_DR;         else tap_state <= PAUSE_DR;
+                EXIT2_DR:         if (tms) tap_state <= UPDATE_DR;        else tap_state <= SHIFT_DR;
+                UPDATE_DR:        if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
+                SELECT_IR_SCAN:   if (tms) tap_state <= TEST_LOGIC_RESET; else tap_state <= CAPTURE_IR;
+                CAPTURE_IR:       if (tms) tap_state <= EXIT1_IR;         else tap_state <= SHIFT_IR;
+                SHIFT_IR:         if (tms) tap_state <= EXIT1_IR;         else tap_state <= SHIFT_IR;
+                EXIT1_IR:         if (tms) tap_state <= UPDATE_IR;        else tap_state <= PAUSE_IR;
+                PAUSE_IR:         if (tms) tap_state <= EXIT2_IR;         else tap_state <= PAUSE_IR;
+                EXIT2_IR:         if (tms) tap_state <= UPDATE_IR;        else tap_state <= SHIFT_IR;
+                UPDATE_IR:        if (tms) tap_state <= SELECT_DR_SCAN;   else tap_state <= RUN_TEST_IDLE;
+                default:          tap_state <= TEST_LOGIC_RESET;
+            endcase
+        end
     end
 
     // ── Instruction Register ────────────────────────────────────
@@ -143,6 +147,7 @@ module jtag_dtm (
 
     // DMI register (41 bits): {address[40:34], data[33:2], op[1:0]}
     logic [DMI_WIDTH-1:0] dmi_shift;
+    logic [DMI_WIDTH-1:0] dmi_shift_rev;
 
     // DMI status tracking
     logic [1:0] dmi_stat;  // 00=ok, 01=reserved, 10=failed, 11=busy
@@ -178,16 +183,8 @@ module jtag_dtm (
 
     // ── DTMCS Write Processing (on UPDATE_DR) ────────────────────
     // Handle dmireset (bit 16) and dmihardreset (bit 17)
-    always_ff @(posedge tck) begin
-        if (tap_state == TEST_LOGIC_RESET) begin
-            dmi_stat <= 2'b00;
-        end else if (tap_state == UPDATE_DR && ir_reg == IR_DTMCS) begin
-            if (dtmcs_shift[17])     // dmihardreset
-                dmi_stat <= 2'b00;
-            else if (dtmcs_shift[16]) // dmireset
-                dmi_stat <= 2'b00;
-        end
-    end
+    wire dtmcs_dmireset_pulse =
+        (tap_state == UPDATE_DR) && (ir_reg == IR_DTMCS) && (dtmcs_shift[17] || dtmcs_shift[16]);
 
     // ── TDO output mux (active on negedge tck per JTAG spec) ────
     always_ff @(negedge tck) begin
@@ -218,11 +215,14 @@ module jtag_dtm (
     logic update_dmi_pulse;
     logic update_dmi_d;
 
-    always_ff @(posedge tck)
-        update_dmi_d <= (tap_state == UPDATE_DR) && (ir_reg == IR_DMI) && (dmi_shift[1:0] != 2'b00);
+    always_ff @(posedge tck) begin
+        if (!resetn)
+            update_dmi_d <= 1'b0;
+        else
+            update_dmi_d <= (tap_state == UPDATE_DR) && (ir_reg == IR_DMI) && (dmi_shift[1:0] != 2'b00) && !update_dmi_d;
+    end
 
-    assign update_dmi_pulse = (tap_state == UPDATE_DR) && (ir_reg == IR_DMI)
-                              && (dmi_shift[1:0] != 2'b00) && !update_dmi_d;
+    assign update_dmi_pulse = update_dmi_d;
 
     // Latch DMI transaction fields in tck domain
     logic        dmi_write_tck;
@@ -230,7 +230,7 @@ module jtag_dtm (
     logic [31:0] dmi_wdata_tck;
 
     always_ff @(posedge tck) begin
-        if (update_dmi_pulse) begin
+        if (tap_state == UPDATE_DR && ir_reg == IR_DMI && dmi_shift[1:0] != 2'b00) begin
             dmi_write_tck <= (dmi_shift[1:0] == 2'b10);  // op=2 → write
             dmi_addr_tck  <= dmi_shift[DMI_WIDTH-1:34];
             dmi_wdata_tck <= dmi_shift[33:2];
@@ -253,35 +253,56 @@ module jtag_dtm (
 
     wire sys_pulse = sync_ff2 && !sync_ff3;
 
-    // CDC: synchronize response back to tck domain
-    logic resp_valid_sys;
-    logic resp_sync1, resp_sync2, resp_sync3;
+    // CDC: synchronize response back to tck domain using a persistent toggle.
+    // This avoids missing a one-cycle clk pulse when tck is asynchronous/slower.
+    logic        resp_toggle_sys;
+    logic [31:0] resp_data_sys;
+    logic [1:0]  resp_op_sys;
+    logic        resp_tog_sync1, resp_tog_sync2, resp_tog_last;
 
     always_ff @(posedge tck) begin
-        resp_sync1 <= resp_valid_sys;
-        resp_sync2 <= resp_sync1;
-        resp_sync3 <= resp_sync2;
+        if (tap_state == TEST_LOGIC_RESET) begin
+            resp_tog_sync1 <= 1'b0;
+            resp_tog_sync2 <= 1'b0;
+            resp_tog_last  <= 1'b0;
+        end else begin
+            resp_tog_sync1 <= resp_toggle_sys;
+            resp_tog_sync2 <= resp_tog_sync1;
+            resp_tog_last  <= resp_tog_sync2;
+        end
     end
 
-    wire resp_tck_pulse = resp_sync2 && !resp_sync3;
+    wire resp_tck_pulse = resp_tog_sync2 ^ resp_tog_last;
 
     // Latch response data in tck domain
     always_ff @(posedge tck) begin
-        if (tap_state == TEST_LOGIC_RESET) begin
+        if (tap_state == TEST_LOGIC_RESET || dtmcs_dmireset_pulse) begin
             dmi_resp_data <= 32'h0;
             dmi_resp_op   <= 2'b00;
             dmi_busy      <= 1'b0;
+            dmi_stat      <= 2'b00;
         end else begin
             if (update_dmi_pulse) begin
                 dmi_busy <= 1'b1;
+                dmi_resp_op <= 2'b11; // busy until response crosses back
+                dmi_stat <= 2'b11;
             end
             if (resp_tck_pulse) begin
-                dmi_resp_data <= dbg_rdata;
-                dmi_resp_op   <= 2'b00;  // success
+                dmi_resp_data <= resp_data_sys;
+                dmi_resp_op   <= resp_op_sys;
                 dmi_busy      <= 1'b0;
+                dmi_stat      <= resp_op_sys;
             end
         end
     end
+
+    // Reverse DMI shift order to handle LSB-first JTAG shifts
+    genvar dmi_i;
+    generate
+        for (dmi_i = 0; dmi_i < DMI_WIDTH; dmi_i = dmi_i + 1) begin : gen_dmi_rev
+            assign dmi_shift_rev[dmi_i] = dmi_shift[DMI_WIDTH-1-dmi_i];
+        end
+    endgenerate
 
     // System clock domain outputs to debug_apb
     always_ff @(posedge clk) begin
@@ -291,9 +312,11 @@ module jtag_dtm (
             dbg_addr      <= 8'h0;
             dbg_wdata     <= 32'h0;
             dbg_wstrb     <= 4'h0;
-            resp_valid_sys <= 1'b0;
+            resp_toggle_sys <= 1'b0;
+            resp_data_sys   <= 32'h0;
+            resp_op_sys     <= 2'b00;
         end else begin
-            if (sys_pulse) begin
+            if (sys_pulse && !dbg_valid) begin
                 dbg_valid <= 1'b1;
                 dbg_write <= dmi_write_tck;
                 dbg_addr  <= {1'b0, dmi_addr_tck};  // Zero-extend 7-bit to 8-bit
@@ -301,12 +324,10 @@ module jtag_dtm (
                 dbg_wstrb <= 4'hF;
             end else if (dbg_valid && dbg_ready) begin
                 dbg_valid      <= 1'b0;
-                resp_valid_sys <= 1'b1;
+                resp_data_sys  <= dbg_rdata;
+                resp_op_sys    <= 2'b00;  // success
+                resp_toggle_sys <= ~resp_toggle_sys;
             end
-
-            // Clear response valid after it's been synchronized
-            if (resp_valid_sys && !sys_pulse && !dbg_valid)
-                resp_valid_sys <= 1'b0;
         end
     end
 

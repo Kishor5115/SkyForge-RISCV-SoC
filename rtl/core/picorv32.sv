@@ -125,6 +125,17 @@ module picorv32 #(
 	//==========================================================================
 	input logic [31:0] irq,
 	output logic [31:0] eoi,
+	input logic        dbg_halt_req,
+	input logic        dbg_resume_req,
+	input logic        dbg_reg_write,
+	input logic        dbg_reg_read,
+	input logic [4:0]  dbg_reg_addr,
+	input logic [31:0] dbg_reg_wdata,
+	output logic       dbg_halted,
+	output logic [31:0] dbg_reg_rdata,
+	output logic [31:0] dbg_pc,
+	input logic        dbg_set_pc,
+	input logic [31:0] dbg_set_pc_val,
 
 `ifdef RISCV_FORMAL
 	output logic        rvfi_valid,
@@ -213,6 +224,36 @@ module picorv32 #(
 	logic [31:0] irq_mask;
 	logic [31:0] irq_pending;
 	logic [31:0] timer;
+
+	logic dbg_halt_allowed;
+
+	// ebreak-triggered halt: when ebreak is decoded, self-halt instead of trap.
+	// This is critical for GDB software breakpoints to work.
+	logic ebreak_halt_trigger;
+	assign ebreak_halt_trigger = !CATCH_ILLINSN && decoder_trigger_q && !decoder_pseudo_trigger_q && instr_ecall_ebreak;
+
+	assign dbg_halt_allowed = (cpu_state == cpu_state_fetch) && !mem_busy && !mem_valid && !irq_state;
+
+	// Capture PC on halt entry
+	logic [31:0] dbg_halt_pc;
+
+	always_ff @(posedge clk) begin
+		if (!resetn) begin
+			dbg_halted <= 1'b0;
+			dbg_halt_pc <= PROGADDR_RESET;
+		end else if (dbg_resume_req) begin
+			dbg_halted <= 1'b0;
+		end else if (ebreak_halt_trigger) begin
+			// ebreak: halt immediately and record PC of the ebreak instruction
+			dbg_halted <= 1'b1;
+			dbg_halt_pc <= reg_pc;
+		end else if (dbg_halt_req && dbg_halt_allowed) begin
+			dbg_halted <= 1'b1;
+			dbg_halt_pc <= reg_pc;
+		end
+	end
+
+	assign dbg_pc = dbg_halt_pc;
 
 `ifndef PICORV32_REGS
 	logic [31:0] cpuregs [0:regfile_size-1];
@@ -428,6 +469,7 @@ module picorv32 #(
 
 	logic mem_busy;
 	assign mem_busy = |{mem_do_prefetch, mem_do_rinst, mem_do_rdata, mem_do_wdata};
+	/* dbg_halt_allowed and dbg_halted are defined above with ebreak halt support */
 	logic mem_done_raw;
 	assign mem_done_raw = resetn && ((mem_xfer && |mem_state && (mem_do_rinst || mem_do_rdata || mem_do_wdata)) || (&mem_state && mem_do_rinst)) &&
 			(!mem_la_firstword || (~&mem_rdata_latched[1:0] && mem_xfer));
@@ -1242,6 +1284,7 @@ module picorv32 #(
 
 	logic [7:0] cpu_state;
 	logic [1:0] irq_state;
+	logic [31:0] irq_pending_ack;
 
 	`FORMAL_KEEP logic [127:0] dbg_ascii_state;
 
@@ -1388,7 +1431,7 @@ module picorv32 #(
 					cpuregs_write = 1;
 				end
 				ENABLE_IRQ && irq_state[1]: begin
-					cpuregs_wrdata = irq_pending & ~irq_mask;
+					cpuregs_wrdata = irq_pending_ack;
 					cpuregs_write = 1;
 				end
 			endcase
@@ -1397,7 +1440,9 @@ module picorv32 #(
 
 `ifndef PICORV32_REGS
 	always_ff @(posedge clk) begin
-		if (resetn && cpuregs_write && latched_rd)
+		if (resetn && dbg_halted && dbg_reg_write && dbg_reg_addr)
+			cpuregs[dbg_reg_addr] <= dbg_reg_wdata;
+		else if (resetn && cpuregs_write && latched_rd)
 `ifdef PICORV32_TESTBUG_001
 			cpuregs[latched_rd ^ 1] <= cpuregs_wrdata;
 `elsif PICORV32_TESTBUG_002
@@ -1406,6 +1451,8 @@ module picorv32 #(
 			cpuregs[latched_rd] <= cpuregs_wrdata;
 `endif
 	end
+
+	assign dbg_reg_rdata = dbg_reg_addr ? cpuregs[dbg_reg_addr] : 32'h0;
 
 	always_comb begin
 		decoded_rs = 'bx;
@@ -1460,47 +1507,71 @@ module picorv32 #(
 			cpuregs_rs2 = cpuregs_rs1;
 		end
 	end
+
+	assign dbg_reg_rdata = 32'h0;
 `endif
 
 	assign launch_next_insn = cpu_state == cpu_state_fetch && decoder_trigger && (!ENABLE_IRQ || irq_delay || irq_active || !(irq_pending & ~irq_mask));
 
 	always_ff @(posedge clk) begin
-		trap <= 0;
-		reg_sh <= 'bx;
-		reg_out <= 'bx;
-		set_mem_do_rinst = 0;
-		set_mem_do_rdata = 0;
-		set_mem_do_wdata = 0;
-
-		alu_out_0_q <= alu_out_0;
-		alu_out_q <= alu_out;
-
-		alu_wait <= 0;
-		alu_wait_2 <= 0;
-
-		if (launch_next_insn) begin
-			dbg_rs1val <= 'bx;
-			dbg_rs2val <= 'bx;
-			dbg_rs1val_valid <= 0;
-			dbg_rs2val_valid <= 0;
-		end
-
-		if (WITH_PCPI && CATCH_ILLINSN) begin
-			if (resetn && pcpi_valid && !pcpi_int_wait) begin
-				if (pcpi_timeout_counter)
-					pcpi_timeout_counter <= pcpi_timeout_counter - 1;
-			end else
-				pcpi_timeout_counter <= ~0;
-			pcpi_timeout <= !pcpi_timeout_counter;
-		end
-
-		if (ENABLE_COUNTERS) begin
-			count_cycle <= resetn ? count_cycle + 1 : 0;
-			if (!ENABLE_COUNTERS64) count_cycle[63:32] <= 0;
+		if (dbg_halted) begin
+			trap <= 0;
+			set_mem_do_rinst = 0;
+			set_mem_do_rdata = 0;
+			set_mem_do_wdata = 0;
+			mem_do_prefetch <= 0;
+			mem_do_rinst <= 0;
+			mem_do_rdata <= 0;
+			mem_do_wdata <= 0;
+			pcpi_valid <= 0;
+			trace_valid <= 0;
+			decoder_trigger <= dbg_resume_req;
+			decoder_trigger_q <= dbg_resume_req;
+			decoder_pseudo_trigger <= dbg_resume_req;
+			decoder_pseudo_trigger_q <= dbg_resume_req;
+			do_waitirq <= 0;
+			// Update PC from debug module's DPC on resume
+			if (dbg_set_pc) begin
+				reg_pc <= dbg_set_pc_val;
+				reg_next_pc <= dbg_set_pc_val;
+			end
 		end else begin
-			count_cycle <= 'bx;
-			count_instr <= 'bx;
-		end
+			trap <= 0;
+			reg_sh <= 'bx;
+			reg_out <= 'bx;
+			set_mem_do_rinst = 0;
+			set_mem_do_rdata = 0;
+			set_mem_do_wdata = 0;
+
+			alu_out_0_q <= alu_out_0;
+			alu_out_q <= alu_out;
+
+			alu_wait <= 0;
+			alu_wait_2 <= 0;
+
+			if (launch_next_insn) begin
+				dbg_rs1val <= 'bx;
+				dbg_rs2val <= 'bx;
+				dbg_rs1val_valid <= 0;
+				dbg_rs2val_valid <= 0;
+			end
+
+			if (WITH_PCPI && CATCH_ILLINSN) begin
+				if (resetn && pcpi_valid && !pcpi_int_wait) begin
+					if (pcpi_timeout_counter)
+						pcpi_timeout_counter <= pcpi_timeout_counter - 1;
+				end else
+					pcpi_timeout_counter <= ~0;
+				pcpi_timeout <= !pcpi_timeout_counter;
+			end
+
+			if (ENABLE_COUNTERS) begin
+				count_cycle <= resetn ? count_cycle + 1 : 0;
+				if (!ENABLE_COUNTERS64) count_cycle[63:32] <= 0;
+			end else begin
+				count_cycle <= 'bx;
+				count_instr <= 'bx;
+			end
 
 		next_irq_pending = ENABLE_IRQ ? irq_pending & LATCHED_IRQ : 'bx;
 
@@ -1538,6 +1609,7 @@ module picorv32 #(
 			irq_mask <= ~0;
 			next_irq_pending = 0;
 			irq_state <= 0;
+			irq_pending_ack <= 0;
 			eoi <= 0;
 			timer <= 0;
 			if (~STACKADDR) begin
@@ -1580,8 +1652,8 @@ module picorv32 #(
 						mem_do_rinst <= 1;
 					end
 					ENABLE_IRQ && irq_state[1]: begin
-						eoi <= irq_pending & ~irq_mask;
-						next_irq_pending = next_irq_pending & irq_mask;
+						eoi <= irq_pending_ack;
+						next_irq_pending = next_irq_pending & ~irq_pending_ack;
 					end
 				endcase
 
@@ -1607,6 +1679,8 @@ module picorv32 #(
 				latched_compr <= compressed_instr;
 
 				if (ENABLE_IRQ && ((decoder_trigger && !irq_active && !irq_delay && |(irq_pending & ~irq_mask)) || irq_state)) begin
+					if (!irq_state)
+						irq_pending_ack <= irq_pending & ~irq_mask;
 					irq_state <=
 						irq_state == 2'b00 ? 2'b01 :
 						irq_state == 2'b01 ? 2'b10 : 2'b00;
@@ -2031,9 +2105,8 @@ module picorv32 #(
 			end else
 				cpu_state <= cpu_state_trap;
 		end
-		if (!CATCH_ILLINSN && decoder_trigger_q && !decoder_pseudo_trigger_q && instr_ecall_ebreak) begin
-			cpu_state <= cpu_state_trap;
-		end
+		// ebreak no longer traps — it enters debug halt via ebreak_halt_trigger
+		// (see dbg_halted logic above). The FSM stalls in dbg_halted check.
 
 		if (!resetn || mem_done) begin
 			mem_do_prefetch <= 0;
@@ -2061,6 +2134,7 @@ module picorv32 #(
 			end
 		end
 		current_pc = 'bx;
+		end
 	end
 
 `ifdef RISCV_FORMAL
