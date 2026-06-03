@@ -5,7 +5,9 @@
  * intended for use while the CPU is halted, so no contention is expected.
  */
 
-module axi_interconnect_2m (
+module axi_interconnect_2m #(
+    parameter BOOTROM_ADDR_WIDTH = 8
+)(
     input logic clk,
     input logic resetn,
 
@@ -273,7 +275,9 @@ module axi_interconnect_2m (
     assign m1_axi_rresp  = r_sel_hold ? x_rresp : 2'b00;
     assign m1_axi_rdata  = r_sel_hold ? x_rdata : 32'h0;
 
-    axi_interconnect u_xbar (
+    axi_interconnect #(
+        .BOOTROM_ADDR_WIDTH(BOOTROM_ADDR_WIDTH)
+    ) u_xbar (
         .clk            (clk),
         .resetn         (resetn),
         .m_axi_awvalid  (x_awvalid),

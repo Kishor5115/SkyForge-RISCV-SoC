@@ -189,7 +189,7 @@ module flash_ctrl #(
                 r_valid_reg <= 1'b1;
                 case (axi_araddr[5:0])
                     REG_CTRL:    r_data_reg <= {28'b0, reg_addr_width, reg_xip_en, reg_enable};
-                    REG_STATUS:  r_data_reg <= {timeout_err, 23'b0, state, xip_active, spi_busy};
+                    REG_STATUS:  r_data_reg <= {timeout_err, 23'b0, state, 2'b0, xip_active, spi_busy};
                     REG_CMD:     r_data_reg <= {23'b0, reg_cmd_start, reg_cmd};
                     REG_ADDR:    r_data_reg <= reg_addr;
                     REG_TXDATA:  r_data_reg <= {24'b0, reg_txdata};

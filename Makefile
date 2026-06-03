@@ -31,80 +31,8 @@ VFLAGS     = -Wall -Wno-fatal --trace --cc --exe --build -j $(shell nproc) \
 	help firmware \
 	yosys sta pnr flow \
 	pd-synth pd-sta pd-floorplan pd-place pd-cts pd-route pd-pnr pd-flow \
-	openlane \
+	openlane openlane-run openlane-mount openlane-view-klayout openlane-view-magic openlane-clean \
 	show show_netlist clean_pd
-
-# ==============================================================================
-#  ASIC FLOW — Modular Physical Design Targets
-# ==============================================================================
-
-# ── Synthesis (Yosys) ─────────────────────────────────────────────────────────
-pd-synth: ## Run Yosys synthesis (OpenLane-style)
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Synthesis (Yosys)"
-	@echo "══════════════════════════════════════════════════════════════"
-	./flow/run_yosys.sh
-
-yosys: pd-synth ## Alias for pd-synth
-
-# ── Static Timing Analysis (OpenSTA) ─────────────────────────────────────────
-pd-sta: pd-synth ## Run OpenSTA timing analysis (requires synthesis)
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Static Timing Analysis (OpenSTA)"
-	@echo "══════════════════════════════════════════════════════════════"
-	./flow/run_opensta.sh
-
-sta: pd-sta ## Alias for pd-sta
-
-# ── Floorplan Only ────────────────────────────────────────────────────────────
-pd-floorplan: pd-synth ## Run OpenROAD up to floorplan
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Floorplan (OpenROAD)"
-	@echo "══════════════════════════════════════════════════════════════"
-	OPENROAD_STOP_AFTER=floorplan ./flow/run_openroad.sh
-
-# ── Placement Only ────────────────────────────────────────────────────────────
-pd-place: pd-synth ## Run OpenROAD up to placement
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Placement (OpenROAD)"
-	@echo "══════════════════════════════════════════════════════════════"
-	OPENROAD_STOP_AFTER=place ./flow/run_openroad.sh
-
-# ── CTS Only ──────────────────────────────────────────────────────────────────
-pd-cts: pd-synth ## Run OpenROAD up to CTS
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Clock Tree Synthesis (OpenROAD)"
-	@echo "══════════════════════════════════════════════════════════════"
-	OPENROAD_STOP_AFTER=cts ./flow/run_openroad.sh
-
-# ── Routing Only ──────────────────────────────────────────────────────────────
-pd-route: pd-synth ## Run OpenROAD up to routing
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Routing (OpenROAD)"
-	@echo "══════════════════════════════════════════════════════════════"
-	OPENROAD_STOP_AFTER=route ./flow/run_openroad.sh
-
-# ── Full PnR (no stop) ───────────────────────────────────────────────────────
-pd-pnr: pd-synth ## Run full OpenROAD PnR (all stages)
-	@echo "══════════════════════════════════════════════════════════════"
-	@echo "  STAGE: Full Place-and-Route (OpenROAD)"
-	@echo "══════════════════════════════════════════════════════════════"
-	./flow/run_openroad.sh
-
-pnr: pd-pnr ## Alias for pd-pnr
-
-# ── Master Flow (Synth → STA → Full PnR) ─────────────────────────────────────
-pd-flow: pd-synth pd-sta pd-pnr ## Run complete RTL-to-GDSII pipeline
-	@echo ""
-	@echo "╔═══════════════════════════════════════════════════════════════╗"
-	@echo "║  ✓  ASIC Flow Complete!                                       ║"
-	@echo "║                                                               ║"
-	@echo "║  Results: flow/out/openroad/results/                          ║"
-	@echo "║  Reports: flow/out/openroad/reports/                          ║"
-	@echo "║  Logs:    flow/logs/                                          ║"
-	@echo "╚═══════════════════════════════════════════════════════════════╝"
-
-flow: pd-flow ## Alias for pd-flow
 
 # ==============================================================================
 #  OPENLANE FLOW (wrapper-based)
@@ -130,22 +58,25 @@ OPENLANE_DOCKER_RUN := docker run --rm \
 	$(OPENLANE_DOCKER_OPTS) \
 	$(OPENLANE_IMAGE_NAME)
 
-openlane-floorplan: ## Run OpenLane until floorplan
-	@echo "ERROR: openlane-floorplan target is not supported in this repo."
-	@echo "Use: make -C openlane run DESIGN=soc_core_prod"
-	@exit 2
+openlane: openlane-run
 
-openlane: ## Run full OpenLane flow
+openlane-run: ## Run full OpenLane flow
 	@echo "══════════════════════════════════════════════════════════════"
 	@echo "  STAGE: OpenLane Full Flow"
 	@echo "══════════════════════════════════════════════════════════════"
-	$(OPENLANE_DOCKER_RUN) sh -c "./flow.tcl -design $(HOME)/riscv-soc/$(OPENLANE_DESIGN) -overwrite"
+	$(MAKE) -C openlane run
 
-# ── Legacy aliases (backward compatibility) ───────────────────────────────────
-openroad_floorplan: pd-floorplan
-openroad_place: pd-place
-openroad_cts: pd-cts
-openroad_route: pd-route
+openlane-mount: ## Mount OpenLane Docker shell
+	$(MAKE) -C openlane mount
+
+openlane-view-klayout: ## View layout in KLayout
+	$(MAKE) -C openlane view-klayout
+
+openlane-view-magic: ## View layout in Magic
+	$(MAKE) -C openlane view-magic
+
+openlane-clean: ## Clean OpenLane run directories
+	$(MAKE) -C openlane clean
 
 # ── Clean PD artifacts ────────────────────────────────────────────────────────
 clean_pd: ## Clean all physical design artifacts
@@ -171,15 +102,12 @@ help: ## Show available targets
 	@echo "║    make sim_soc_new_tb — SoC bring-up smoke test (Icarus)     ║"
 	@echo "║    make firmware    — Build firmware apps (default + tests)   ║"
 	@echo "║                                                               ║"
-	@echo "║  ASIC Flow (modular):                                         ║"
-	@echo "║    make pd-synth      — Yosys synthesis                       ║"
-	@echo "║    make pd-sta        — OpenSTA timing analysis               ║"
-	@echo "║    make pd-floorplan  — OpenROAD: stop after floorplan        ║"
-	@echo "║    make pd-place      — OpenROAD: stop after placement        ║"
-	@echo "║    make pd-cts        — OpenROAD: stop after CTS              ║"
-	@echo "║    make pd-route      — OpenROAD: stop after routing          ║"
-	@echo "║    make pd-pnr        — OpenROAD: full PnR (all stages)       ║"
-	@echo "║    make pd-flow       — Complete RTL-to-GDSII pipeline        ║"
+	@echo "║  OpenLane:                                                    ║"
+	@echo "║    make openlane-run     — Run full OpenLane flow             ║"
+	@echo "║    make openlane-mount   — Mount OpenLane Docker shell        ║"
+	@echo "║    make openlane-view-klayout — View layout in KLayout        ║"
+	@echo "║    make openlane-view-magic   — View layout in Magic          ║"
+	@echo "║    make openlane-clean   — Clean OpenLane runs                ║"
 	@echo "║                                                               ║"
 	@echo "║  Visualization:                                               ║"
 	@echo "║    make show          — Show RTL schematic of a module        ║"

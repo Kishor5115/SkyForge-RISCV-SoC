@@ -260,7 +260,9 @@ module soc_core #(
         .trace_data     ()
     );
 
-    axi_interconnect_2m u_axi_xbar (
+    axi_interconnect_2m #(
+        .BOOTROM_ADDR_WIDTH(BOOTROM_ADDR_WIDTH)
+    ) u_axi_xbar (
         .clk            (clk_i),
         .resetn         (rst_ni),
         .m0_axi_awvalid (mem_axi_awvalid),
