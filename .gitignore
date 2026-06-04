@@ -1,57 +1,146 @@
-# Build artifacts
+# =============================================================================
+# PicoRV32 RISC-V SoC — .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Firmware build artifacts
+# -----------------------------------------------------------------------------
 firmware/build/
-*.o
-*.a
-*.elf
-*.hex
-*.lst
-*.map
+firmware/*.elf
+firmware/*.bin
+firmware/*.hex
+firmware/*.lst
+firmware/*.map
+firmware/*.o
+firmware/*.a
 firmware/gdb_session.log
+firmware/gdb_history
 *.gdb_history
 
-# Simulation
-sim/work/
+# Keep only the pre-built boot ROM image needed for simulation
+!sim/bootrom.hex
+
+# -----------------------------------------------------------------------------
+# RTL simulation outputs
+# -----------------------------------------------------------------------------
 sim/*.vcd
+sim/*.fst
 sim/*.wdb
+sim/*.fsdb
 sim/*.log
-sim/obj_dir*/
 sim/*.vvp
 sim/*_sram.hex
-sim/bootrom.hex
+sim/firmware_sram.hex
+sim/integration_test.hex
+sim/obj_dir/
+sim/obj_dir_*/
 
-# IDE files
-.vscode/
-.codex/
-.agents/
+# UVM compile artifacts (Verilator, VCS, Questa, Xcelium)
+uvm/obj_dir/
+uvm/csrc/
+uvm/simv
+uvm/simv.daidir/
+uvm/*.log
+uvm/*.vdb
+uvm/cov_report/
+uvm/urgReport/
+uvm/work/
+uvm/imc_report/
+uvm/dump.vcd
 
-# ASIC flow outputs
+# General Icarus / Verilator outputs
+*.vvp
+*.vcd
+*.fst
+*.fsdb
+obj_dir/
+obj_dir_*/
+work/
+
+# -----------------------------------------------------------------------------
+# Synthesis / ASIC flow outputs (Yosys / OpenROAD / OpenLane)
+# -----------------------------------------------------------------------------
 flow/out/
 flow/logs/
 flow/yosys/out/
+flow/runs/
 *.rpt
 *.rpt.txt
+*.synth.v
+*.synth.json
+*.sdc.final
+*.spef
+*.def
+*.gds
+*.oas
+*.lef.merged
+*.sta.log
+*.timing.rpt
 
-# OpenLane generated outputs (do not ignore sources)
+# OpenLane run outputs (keep design source, ignore run results)
 openlane/designs/*/runs/
+openlane/designs/*/logs/
+openlane/designs/*/reports/
+openlane/designs/*/results/
+openlane/designs/*/tmp/
+openlane/designs/*/warnings.log
 
-# OpenRAM generated outputs (do not ignore sources)
-openram/build/
+# OpenRAM generated views — ignore heavy transient files, keep P&R views
+openram/build/*.sp
+openram/build/*.lvs
+openram/build/*.lvs.sp
+openram/build/functional_*.sp
+openram/build/sram.sp
+openram/build/*.py
 openram/__pycache__/
+openram/*.pyc
+openram/*.pyo
 
+# Magic / Klayout outputs
+*.mag
+*.magicrc
+*.ext
+*.sim
 
-# Python cache
+# -----------------------------------------------------------------------------
+# Personal notes and AI agent workspaces (not for public release)
+# -----------------------------------------------------------------------------
+my_docs/
+archive/
+CLAUDE.md
+timeline.md
+.kiro/
+.agents/
+.codex/
+
+# -----------------------------------------------------------------------------
+# IDE / editor configs
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+.venv/
+env/
+dist/
+*.whl
 
-# Temporary
+# -----------------------------------------------------------------------------
+# Misc
+# -----------------------------------------------------------------------------
 *.swp
 *.swo
 *~
 .DS_Store
-
-# agent based files
-CLAUDE.md
-
-uvm/
+Thumbs.db
+*.bak
+*.tmp
+*.log
