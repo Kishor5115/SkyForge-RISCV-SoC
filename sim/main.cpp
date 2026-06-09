@@ -232,7 +232,6 @@ private:
     struct termios orig_termios;
 
 public:
-    /* Pull available bytes from stdin into the RX queue (non-blocking). */
     void poll_stdin() {
         if (stdin_eof) return;
         unsigned char buf[64];
@@ -240,7 +239,9 @@ public:
         if (n > 0) {
             for (ssize_t i = 0; i < n; i++) rx_queue.push_back(buf[i]);
         } else if (n == 0) {
-            stdin_eof = true;          /* piped input reached EOF */
+            /* If it's a TTY, read() returns 0 when no characters are ready
+               (because we set VMIN=0 VTIME=0). Only treat 0 as EOF for pipes. */
+            if (!is_tty) stdin_eof = true;
         }
         /* n < 0 with EAGAIN: nothing available, ignore. */
     }
