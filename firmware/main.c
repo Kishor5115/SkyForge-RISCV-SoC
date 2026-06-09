@@ -8,9 +8,10 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include "uart.h"
+#include "cli.h"
 
-/* ── APB Timer Registers (base 0x20001000) ───────────────────────── */
-#define TIMER_BASE      0x20001000U
+/* ── APB Timer Registers (TIMER_BASE from common.h) ──────────────── */
 #define TIMER_LOAD      (*(volatile uint32_t *)(TIMER_BASE + 0x00))
 #define TIMER_CTRL      (*(volatile uint32_t *)(TIMER_BASE + 0x08))
 #define TIMER_INTCLR    (*(volatile uint32_t *)(TIMER_BASE + 0x0C))
@@ -20,8 +21,7 @@
 #define TIMER_CTRL_PERIODIC (1U << 6)
 #define TIMER_CTRL_IRQ_EN   (1U << 5)
 
-/* ── GPIO (base 0x20002000) per apb_interconnect.sv address map ──── */
-#define GPIO_BASE       0x20002000U
+/* ── GPIO (GPIO_BASE from common.h) ──────────────────────────────── */
 #define GPIO_OUTPUT_EN  (*(volatile uint32_t *)(GPIO_BASE + 0x08))
 #define GPIO_OUT        (*(volatile uint32_t *)(GPIO_BASE + 0x0C))
 
@@ -111,11 +111,20 @@ int main(void)
     timer_init();
     DIAG(0xA0000002U);   /* timer init done */
 
+    /* UART: baud divisor 14 → ~115200 baud @ 25 MHz (clk/(baud*16)).
+     * The Verilator harness decodes 8N1 at baud_div*16 = 224 clk/bit. */
+    uart_init(14);
+    DIAG(0xA0000006U);   /* uart init done */
+
     BaseType_t rcA = xTaskCreate(vTaskA, "TaskA", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
     DIAG(0xA0000003U);   /* TaskA created */
 
     BaseType_t rcB = xTaskCreate(vTaskB, "TaskB", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
     DIAG(0xA0000004U);   /* TaskB created */
+
+    /* Interactive FreeRTOS+CLI shell over UART */
+    cli_start();
+    DIAG(0xA0000007U);   /* CLI task created */
 
     /* Diagnostic: task creation failure */
     if ((rcA != pdPASS) || (rcB != pdPASS)) {

@@ -14,10 +14,11 @@ A production-quality, fully open-source **RV32IM SoC** built around the [PicoRV3
 
 | Feature | Detail |
 |---|---|
-| **CPU** | PicoRV32 (RV32IM), AXI4-Lite master |
-| **Memory** | 16 KB SRAM (AXI slave) + 256 B Boot ROM |
+| **CPU** | PicoRV32 (RV32IM — hardware multiply/divide enabled), AXI4-Lite master |
+| **Memory** | 32 KB SRAM (AXI slave) + 256 B Boot ROM |
 | **Bus** | AXI4-Lite 2-master interconnect + AXI→APB bridge |
 | **Peripherals** | UART, GPIO (32-bit), SPI master, APB Timer |
+| **Interactive Shell** | **FreeRTOS+CLI** command-line interface over UART (`help`, `ver`, `status`, `memread`, `gpio`) |
 | **Debug** | RISC-V Debug Module 0.13-style, JTAG tap, Remote-Bitbang |
 | **RTOS** | FreeRTOS 10.x with PicoRV32-specific port |
 | **Verification** | Full UVM env: APB agent, scoreboard, functional coverage, reg model |
@@ -47,7 +48,7 @@ A production-quality, fully open-source **RV32IM SoC** built around the [PicoRV3
                      │  └──────────────┬──────────────┬──────┘     ││
                      │                 │              │             ││
                      │         ┌───────▼──────┐  ┌───▼──────────┐  ││
-                     │         │  SRAM (16KB) │  │  AXI→APB     │  ││
+                     │         │  SRAM (32KB) │  │  AXI→APB     │  ││
                      │         │  sram_axi.sv │  │   Bridge     │  ││
                      │         └──────────────┘  └──────┬───────┘  ││
                      │                                  │           ││
@@ -65,7 +66,7 @@ A production-quality, fully open-source **RV32IM SoC** built around the [PicoRV3
 | Region | Base Address | Size | Notes |
 |---|---|---|---|
 | Boot ROM | `0x0000_0000` | 256 B | XIP, read-only |
-| SRAM | `0x0001_0000` | 16 KB | RWXC |
+| SRAM | `0x0001_0000` | 32 KB | RWXC |
 | APB UART | `0x2000_0000` | 4 KB | 115200 default |
 | APB GPIO | `0x2000_1000` | 4 KB | 32-bit I/O |
 | APB Timer | `0x2000_2000` | 4 KB | 1 ms FreeRTOS tick |
@@ -85,7 +86,7 @@ riscv-soc/
 │   ├── interconnect/
 │   │   └── axi_interconnect_2m.sv  2-master AXI switch
 │   ├── memory/
-│   │   └── sram_axi.sv         16 KB SRAM AXI slave
+│   │   └── sram_axi.sv         32 KB SRAM AXI slave
 │   ├── boot/
 │   │   └── boot_fsm.sv         Boot ROM + FSM
 │   ├── peripherals/
@@ -97,10 +98,11 @@ riscv-soc/
 │   └── asic/
 │       └── soc_core.sv         ASIC-hardened top (without pad ring)
 ├── firmware/
-│   ├── main.c                  FreeRTOS demo (tasks + UART/GPIO/Timer)
+│   ├── main.c                  FreeRTOS demo (tasks + UART/GPIO/Timer + CLI)
 │   ├── start.S                 Reset vector, IRQ wrapper, CSR init
 │   ├── FreeRTOSConfig.h        Tick rate, heap size, stack config
 │   ├── FreeRTOS-Kernel/        FreeRTOS 10.x kernel sources
+│   ├── cli/                    FreeRTOS+CLI shell (FreeRTOS_CLI.c + cli_task.c)
 │   ├── port/                   PicoRV32 FreeRTOS port (port.c)
 │   ├── boot/                   Boot ROM C source
 │   ├── drivers/                Peripheral register-level drivers
@@ -110,7 +112,7 @@ riscv-soc/
 │   ├── linker_bootrom.ld       Boot ROM linker script
 │   └── Makefile
 ├── sim/
-│   ├── main.cpp                Verilator harness (Remote-Bitbang JTAG)
+│   ├── main.cpp                Verilator harness (JTAG RBB + interactive UART bridge)
 │   ├── Makefile
 │   └── bootrom.hex             Pre-built boot ROM image
 ├── tb/                         Icarus Verilog unit + integration TBs
@@ -181,13 +183,35 @@ make sim          # All peripheral unit tests
 make sim_soc      # SoC integration test
 ```
 
-### 3. Run Verilator Simulation (with FreeRTOS firmware)
+### 3. Run Verilator Simulation + Interactive FreeRTOS+CLI
+
+The Verilator harness bridges the SoC UART pins to your terminal (keystrokes →
+`uart_rx`, `uart_tx` → stdout), giving a live command shell over the modelled UART.
 
 ```bash
 make run
 # Starts Verilator simulation + Remote-Bitbang listener on :9824
-# UART output appears in the terminal
+# The FreeRTOS+CLI banner and "skyforge> " prompt appear in the terminal.
 ```
+
+Type commands directly into the terminal:
+
+```text
+=== SkyForge CLI ===
+skyforge> help            # list all registered commands
+skyforge> ver             # firmware/SoC banner
+skyforge> status          # uptime, task count, heap usage
+skyforge> memread 0x20002000   # read a 32-bit word at a hex address
+skyforge> gpio 0x000000ff      # drive GPIO_OUT with a 32-bit value
+```
+
+The `vTaskA`/`vTaskB` GPIO blinkers keep running concurrently while you type —
+demonstrating preemptive multitasking alongside the interactive shell.
+
+> Tip: set `SIM_QUIET=1` to suppress the `[SIM]` diagnostic prints for a clean
+> console, e.g. `SIM_QUIET=1 ./sim/obj_dir_firmware/Vsoc_top`.
+> See [docs/FREERTOS_CLI_INTEGRATION.md](docs/FREERTOS_CLI_INTEGRATION.md) for the
+> full integration write-up.
 
 ### 4. JTAG Debug with OpenOCD + GDB
 

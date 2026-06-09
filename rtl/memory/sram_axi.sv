@@ -1,15 +1,15 @@
 /*
  * SRAM AXI Wrapper — ASIC-Ready (OpenRAM / Behavioral)
  *
- * 16KB SRAM with AXI4-Lite slave interface.
- *   16KB = 4096 words × 32 bits, ADDR_WIDTH = 14
+ * 32KB SRAM with AXI4-Lite slave interface.
+ *   32KB = 8192 words × 32 bits, ADDR_WIDTH = 15
  *
  * Simulation : behavioral register-file model (1-cycle read latency)
- * Synthesis  : 4× sky130_sram_4kbyte_1rw_32x1024_8 OpenRAM macros
- *              with 2-bit bank select from addr[11:10]
+ * Synthesis  : 8× sky130_sram_4kbyte_1rw_32x1024_8 OpenRAM macros
+ *              with 3-bit bank select from addr[12:10]
  */
 module sram_axi #(
-    parameter ADDR_WIDTH = 14,          // 16KB = 2^14 bytes
+    parameter ADDR_WIDTH = 15,          // 32KB = 2^15 bytes
     parameter DATA_WIDTH = 32,
     parameter SRAM_INIT_FILE = ""       // Optional hex file for simulation preload
 )(
@@ -49,10 +49,11 @@ module sram_axi #(
     assign axi_bresp = 2'b00;
     assign axi_rresp = 2'b00;
 
-    localparam WORD_AW   = ADDR_WIDTH - 2;   // 12 bits for 4096 words
+    localparam WORD_AW   = ADDR_WIDTH - 2;   // 13 bits for 8192 words
     localparam NUM_WORDS = 2 ** WORD_AW;
-    localparam NUM_BANKS = 4;
     localparam BANK_AW   = 10;               // 1024 words per 4KB bank
+    localparam NUM_BANKS = NUM_WORDS / (2 ** BANK_AW);  // 8 banks for 32KB
+    localparam BANK_SEL_AW = WORD_AW - BANK_AW;         // bank-select width
 
     // ── SRAM port signals ───────────────────────────────────────
     logic                  sram_csb0;
@@ -64,7 +65,7 @@ module sram_axi #(
 
 `ifdef SYNTHESIS
     // ── 4× 4KB OpenRAM banks ────────────────────────────────────
-    logic [1:0] bank_sel_rd_d;
+    logic [BANK_SEL_AW-1:0] bank_sel_rd_d;
     logic [DATA_WIDTH-1:0] bank_dout [0:NUM_BANKS-1];
 
     always_ff @(posedge clk)
@@ -81,7 +82,7 @@ module sram_axi #(
             logic [DATA_WIDTH:0] bank_din0;
             logic [DATA_WIDTH:0] bank_dout0;
 
-            assign bank_csb0 = sram_csb0 | (sram_addr0[WORD_AW-1:BANK_AW] != gi[1:0]);
+            assign bank_csb0 = sram_csb0 | (sram_addr0[WORD_AW-1:BANK_AW] != gi[BANK_SEL_AW-1:0]);
             assign bank_addr0 = {1'b0, sram_addr0[BANK_AW-1:0]};
             assign bank_din0 = {1'b0, sram_din0};
             assign bank_dout[gi] = bank_dout0[DATA_WIDTH-1:0];

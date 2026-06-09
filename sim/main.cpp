@@ -22,6 +22,8 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <termios.h>
+#include <deque>
 
 /* ── Configuration ───────────────────────────────────────────────── */
 #define RBB_PORT        9824
@@ -153,6 +155,157 @@ private:
     int trst, srst;
 };
 
+/* ── Interactive UART Bridge ─────────────────────────────────────────
+ * Pin-level 8N1 bridge between the SoC UART pins and the host terminal:
+ *   - uart_tx  (SoC output) is decoded and written to stdout
+ *   - stdin keystrokes are serialized onto uart_rx (SoC input)
+ *
+ * Bit period must match the firmware: uart_init(14) → baud_div = 14,
+ * 16x oversampling → CYCLES_PER_BIT = 14 * 16 = 224 clock cycles/bit.
+ *
+ * tick_rx() / tick_tx() are each called once per CPU clock cycle.
+ * ──────────────────────────────────────────────────────────────────── */
+#define UART_BAUD_DIV        14
+#define UART_OVERSAMPLE      16
+#define UART_CYCLES_PER_BIT  (UART_BAUD_DIV * UART_OVERSAMPLE)   /* 224 */
+#define STDIN_POLL_INTERVAL  256      /* poll stdin every N clock cycles */
+
+class UartBridge {
+public:
+    UartBridge() {
+        /* RX (driven into SoC) idle state is logic high. */
+        rx_line = 1; rx_sending = false; rx_bit_idx = 0;
+        rx_cycle = 0; cur_byte = 0; stdin_eof = false; poll_cnt = 0;
+
+        /* TX decoder state. */
+        tx_state = TX_IDLE; tx_prev = 1; tx_counter = 0;
+        tx_bit_idx = 0; tx_data = 0; tx_sample_at = 0;
+
+        /* Non-blocking stdin. */
+        int fl = fcntl(STDIN_FILENO, F_GETFL, 0);
+        fcntl(STDIN_FILENO, F_SETFL, fl | O_NONBLOCK);
+
+        /* Raw terminal mode (only if interactive) so keystrokes pass
+         * through immediately without local echo/line buffering. */
+        is_tty = isatty(STDIN_FILENO);
+        if (is_tty) {
+            tcgetattr(STDIN_FILENO, &orig_termios);
+            struct termios raw = orig_termios;
+            raw.c_lflag &= ~(ICANON | ECHO);   /* keep ISIG so Ctrl-C quits */
+            raw.c_iflag &= ~(IXON | ICRNL);
+            raw.c_cc[VMIN]  = 0;
+            raw.c_cc[VTIME] = 0;
+            tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+            printf("[UART] Interactive console ready — type into this terminal.\n");
+            printf("[UART] (Ctrl-C to quit)\n");
+            fflush(stdout);
+        }
+    }
+
+    ~UartBridge() {
+        if (is_tty) tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+    }
+
+    /* Current bit to drive onto uart_rx (call before the posedge eval). */
+    int rx_bit() const { return rx_line; }
+
+private:
+    /* ── RX (host → SoC) serializer state ── */
+    int  rx_line;
+    bool rx_sending;
+    int  rx_bit_idx;          /* 0=start, 1..8=data LSB-first, 9=stop */
+    int  rx_cycle;            /* cycle counter within current bit */
+    unsigned char cur_byte;
+    std::deque<unsigned char> rx_queue;
+    bool stdin_eof;
+    int  poll_cnt;
+
+    /* ── TX (SoC → host) decoder state ── */
+    enum { TX_IDLE, TX_RECV } tx_state;
+    int tx_prev;
+    int tx_counter;
+    int tx_bit_idx;
+    int tx_data;
+    int tx_sample_at;
+
+    bool is_tty;
+    struct termios orig_termios;
+
+public:
+    /* Pull available bytes from stdin into the RX queue (non-blocking). */
+    void poll_stdin() {
+        if (stdin_eof) return;
+        unsigned char buf[64];
+        ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+        if (n > 0) {
+            for (ssize_t i = 0; i < n; i++) rx_queue.push_back(buf[i]);
+        } else if (n == 0) {
+            stdin_eof = true;          /* piped input reached EOF */
+        }
+        /* n < 0 with EAGAIN: nothing available, ignore. */
+    }
+
+    /* Advance the RX serializer one clock cycle (drives uart_rx). */
+    void tick_rx() {
+        if (++poll_cnt >= STDIN_POLL_INTERVAL) {
+            poll_cnt = 0;
+            poll_stdin();
+        }
+
+        if (!rx_sending) {
+            rx_line = 1;                       /* idle high */
+            if (!rx_queue.empty()) {
+                cur_byte   = rx_queue.front();
+                rx_queue.pop_front();
+                rx_sending = true;
+                rx_bit_idx = 0;
+                rx_cycle   = 0;
+            }
+            return;
+        }
+
+        /* Drive the current frame bit. */
+        if      (rx_bit_idx == 0) rx_line = 0;                          /* start  */
+        else if (rx_bit_idx <= 8) rx_line = (cur_byte >> (rx_bit_idx - 1)) & 1; /* data */
+        else                      rx_line = 1;                          /* stop   */
+
+        if (++rx_cycle >= UART_CYCLES_PER_BIT) {
+            rx_cycle = 0;
+            if (++rx_bit_idx >= 10) rx_sending = false;   /* frame complete */
+        }
+    }
+
+    /* Sample uart_tx one clock cycle and emit decoded bytes (call after eval). */
+    void tick_tx(int tx_bit) {
+        switch (tx_state) {
+        case TX_IDLE:
+            if (tx_prev == 1 && tx_bit == 0) {            /* falling edge = start */
+                tx_state     = TX_RECV;
+                tx_counter   = 0;
+                tx_bit_idx   = 0;
+                tx_data      = 0;
+                /* sample bit0 at 1.5 bit periods after the start edge */
+                tx_sample_at = UART_CYCLES_PER_BIT + UART_CYCLES_PER_BIT / 2;
+            }
+            break;
+        case TX_RECV:
+            tx_counter++;
+            if (tx_counter == tx_sample_at) {
+                tx_data |= (tx_bit & 1) << tx_bit_idx;
+                tx_bit_idx++;
+                tx_sample_at += UART_CYCLES_PER_BIT;
+                if (tx_bit_idx == 8) {
+                    putchar((char)(tx_data & 0xFF));
+                    fflush(stdout);
+                    tx_state = TX_IDLE;
+                }
+            }
+            break;
+        }
+        tx_prev = tx_bit;
+    }
+};
+
 /* ── Globals ─────────────────────────────────────────────────────── */
 static volatile bool g_quit = false;
 
@@ -169,6 +322,7 @@ int main(int argc, char **argv) {
 
     auto top = new Vsoc_top;
     RemoteBitbang rbb(RBB_PORT);
+    UartBridge uart;
 
 #if TRACE_ENABLE
     VerilatedVcdC *tfp = new VerilatedVcdC;
@@ -182,6 +336,7 @@ int main(int argc, char **argv) {
     top->jtag_tck = 0;
     top->jtag_tms = 1;
     top->jtag_tdi = 0;
+    top->uart_rx  = 1;          /* UART line idle = high */
 
     vluint64_t sim_time = 0;
 
@@ -214,11 +369,19 @@ int main(int argc, char **argv) {
      * To restore old behaviour, set SIM_LIMIT_RUN=1. */
     bool run_forever = (getenv("SIM_LIMIT_RUN") == nullptr);
 
+    /* When SIM_QUIET is set, suppress the chatty GPIO/periodic diagnostics so
+     * stdout carries only the UART console output (clean interactive shell). */
+    bool quiet = (getenv("SIM_QUIET") != nullptr);
+
     /* ── Main simulation loop ────────────────────────────────────── */
     while (!Verilated::gotFinish() && !g_quit) {
 
         /* Positive edge */
         top->clk = 1;
+
+        /* Drive UART RX line (host keystrokes → SoC), before the edge. */
+        uart.tick_rx();
+        top->uart_rx = uart.rx_bit();
 
         /* Drive JTAG from Remote Bitbang */
         bool quit = rbb.tick();
@@ -230,6 +393,9 @@ int main(int argc, char **argv) {
 
         top->eval();
         auto *root = top->rootp;
+
+        /* Decode UART TX (SoC → host stdout), after the edge. */
+        uart.tick_tx(top->uart_tx);
 
         /* Internal APB debug: confirm writes leave AXI2APB and reach GPIO window */
         if (root->soc_top__DOT__u_soc_core__DOT__apb_psel &&
@@ -252,16 +418,18 @@ int main(int argc, char **argv) {
         if (top->trap && !trap_seen) {
             trap_seen = true;
             trap_time = sim_time;
-            printf("[SIM] *** TRAP detected at time %llu ***\n",
-                   (unsigned long long)sim_time);
-            fflush(stdout);
+            if (!quiet) {
+                printf("[SIM] *** TRAP detected at time %llu ***\n",
+                       (unsigned long long)sim_time);
+                fflush(stdout);
+            }
         }
 
         /* ── Monitor GPIO output changes ─────────────────────────── */
         uint32_t gpio_now = top->gpio_out;
         if (gpio_now != last_gpio_out) {
             gpio_toggle_count++;
-            if (gpio_toggle_count <= 50) {
+            if (!quiet && gpio_toggle_count <= 50) {
                 printf("[SIM] GPIO_OUT changed to 0x%08X at time %llu (toggle #%d)\n",
                        gpio_now, (unsigned long long)sim_time, gpio_toggle_count);
                 fflush(stdout);
@@ -271,13 +439,15 @@ int main(int argc, char **argv) {
             /* GPIO activity confirms firmware is driving peripheral writes. */
             if (gpio_toggle_count >= 2 && !success_reported) {
                 success_reported = true;
-                printf("[SIM] *** SUCCESS: GPIO activity detected ***\n");
-                fflush(stdout);
+                if (!quiet) {
+                    printf("[SIM] *** SUCCESS: GPIO activity detected ***\n");
+                    fflush(stdout);
+                }
             }
         }
 
         /* Periodic status print */
-        if ((sim_time & 0xFFFFF) == 0 && sim_time > 0) {
+        if (!quiet && (sim_time & 0xFFFFF) == 0 && sim_time > 0) {
             printf("[SIM] time=%llu trap=%d gpio=0x%08X toggles=%d\n",
                    (unsigned long long)sim_time, (int)top->trap,
                    (unsigned int)top->gpio_out, gpio_toggle_count);

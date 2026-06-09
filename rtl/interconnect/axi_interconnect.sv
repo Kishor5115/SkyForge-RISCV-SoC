@@ -187,25 +187,25 @@ module axi_interconnect #(
 
     // Write address decode
     assign aw_slave_sel = (m_axi_awaddr < BOOTROM_END)                                   ? SEL_S0 :
-                          (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00014000) ? SEL_S1 :
+                          (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00018000) ? SEL_S1 :
                           (m_axi_awaddr >= 32'h40000000 && m_axi_awaddr < 32'h41000000) ? SEL_S2 :
                           (m_axi_awaddr >= 32'h20000000 && m_axi_awaddr < 32'h20010000) ? SEL_S3 :
                                                                                            SEL_S0;
 
     assign aw_decerr    = !((m_axi_awaddr < BOOTROM_END) ||
-                            (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00014000) ||
+                            (m_axi_awaddr >= 32'h00010000 && m_axi_awaddr < 32'h00018000) ||
                             (m_axi_awaddr >= 32'h40000000 && m_axi_awaddr < 32'h41000000) ||
                             (m_axi_awaddr >= 32'h20000000 && m_axi_awaddr < 32'h20010000));
 
     // Read address decode
     assign ar_slave_sel = (m_axi_araddr < BOOTROM_END)                                   ? SEL_S0 :
-                          (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00014000) ? SEL_S1 :
+                          (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00018000) ? SEL_S1 :
                           (m_axi_araddr >= 32'h40000000 && m_axi_araddr < 32'h41000000) ? SEL_S2 :
                           (m_axi_araddr >= 32'h20000000 && m_axi_araddr < 32'h20010000) ? SEL_S3 :
                                                                                            SEL_S0;
 
     assign ar_decerr    = !((m_axi_araddr < BOOTROM_END) ||
-                            (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00014000) ||
+                            (m_axi_araddr >= 32'h00010000 && m_axi_araddr < 32'h00018000) ||
                             (m_axi_araddr >= 32'h40000000 && m_axi_araddr < 32'h41000000) ||
                             (m_axi_araddr >= 32'h20000000 && m_axi_araddr < 32'h20010000));
 

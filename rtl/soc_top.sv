@@ -6,7 +6,7 @@
  *
  * Memory Map:
  *   0x00000000 - 0x000000FF : Boot ROM (256 Bytes)
- *   0x00010000 - 0x00013FFF : SRAM (16KB, 4× OpenRAM 4KB)
+ *   0x00010000 - 0x00017FFF : SRAM (32KB, 8× OpenRAM 4KB)
  *   0x20000000 - 0x2000FFFF : APB Peripherals
  *   0x40000000 - 0x40FFFFFF : Flash Controller (QSPI + XIP)
  */

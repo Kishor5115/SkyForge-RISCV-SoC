@@ -3,11 +3,11 @@
  *
  * Memory Map:
  *   Boot ROM : 0x00000000 – 0x000000FF  (256 B, read-only)
- *   SRAM     : 0x00010000 – 0x00013FFF  (16 KB, code + data)
+ *   SRAM     : 0x00010000 – 0x00017FFF  (32 KB, code + data)
  *
  * PROGADDR_RESET = 0x00010000  (first SRAM word)
  * PROGADDR_IRQ   = 0x00010010  (IRQ vector, fixed by HW)
- * Stack pointer  = 0x00013FFC  (top of SRAM, grows down)
+ * Stack pointer  = 0x00017FFC  (top of SRAM, grows down)
  * ────────────────────────────────────────────────────────────────── */
 
 OUTPUT_FORMAT("elf32-littleriscv")
@@ -16,10 +16,10 @@ ENTRY(_start)
 
 MEMORY
 {
-    SRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 16K
+    SRAM (rwx) : ORIGIN = 0x00010000, LENGTH = 32K
 }
 
-__stack_top = 0x00013FFC;
+__stack_top = 0x00017FFC;
 
 SECTIONS
 {

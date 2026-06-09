@@ -18,8 +18,8 @@
 #define configUSE_TASK_NOTIFICATIONS              1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES     1
 
-/* ── Memory (heap_4, 6 KB of 16 KB SRAM) ─────────────────────────── */
-#define configTOTAL_HEAP_SIZE                    ((size_t)(6 * 1024))
+/* ── Memory (heap_4, 12 KB of 32 KB SRAM) ────────────────────────── */
+#define configTOTAL_HEAP_SIZE                    ((size_t)(12 * 1024))
 #define configSUPPORT_STATIC_ALLOCATION           0
 #define configSUPPORT_DYNAMIC_ALLOCATION          1
 #define configAPPLICATION_ALLOCATED_HEAP           0
@@ -58,6 +58,11 @@
 #define INCLUDE_vTaskDelay                        1
 #define INCLUDE_xTaskGetSchedulerState            0
 #define INCLUDE_xTaskGetCurrentTaskHandle         0
+
+/* ── FreeRTOS+CLI ────────────────────────────────────────────────── */
+/* Size of the single static output buffer shared by all CLI commands.
+ * Kept small (256 B) to suit the 16 KB SRAM budget; lives in .bss.      */
+#define configCOMMAND_INT_MAX_OUTPUT_SIZE         256
 
 /* ── Assert ──────────────────────────────────────────────────────── */
 #define configASSERT(x) do { if (!(x)) { \

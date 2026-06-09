@@ -37,7 +37,8 @@ CFLAGS_BASE := $(ARCH_FLAGS) -Os -g -Wall -Wextra \
               -I. \
               -I$(LIB_DIR)/inc \
               -I$(DRIVERS_DIR)/inc \
-                            -I$(PICORV32_PORT)
+                            -I$(PICORV32_PORT) \
+              -Icli
 
 # Firmware build mode:
 # - freertos: runs from SRAM @0x10000 with FreeRTOS context-switch IRQ wrapper (start.S)
@@ -82,7 +83,9 @@ FREERTOS_SRCS := \
     $(FREERTOS_SRC)/queue.c \
     $(FREERTOS_SRC)/list.c \
     $(FREERTOS_MEM)/heap_4.c \
-    $(PICORV32_PORT)/port.c
+    $(PICORV32_PORT)/port.c \
+    cli/FreeRTOS_CLI.c \
+    cli/cli_task.c
 
 C_SRCS := \
     $(APP_SRC) \
@@ -101,7 +104,7 @@ OBJS     := $(ASM_OBJS) $(C_OBJS)
 
 # VPATH for finding sources in subdirectories
 # Allows selecting APP_SRC from firmware/, firmware/tests/, firmware/boot/, etc.
-VPATH := . tests boot $(LIB_DIR)/src $(DRIVERS_DIR)/src $(FREERTOS_SRC) $(FREERTOS_MEM) $(PICORV32_PORT) $(LIBC_DIR)
+VPATH := . tests boot $(LIB_DIR)/src $(DRIVERS_DIR)/src $(FREERTOS_SRC) $(FREERTOS_MEM) $(PICORV32_PORT) $(LIBC_DIR) cli
 
 TARGET := $(APP)
 
