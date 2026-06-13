@@ -1,0 +1,38 @@
+# SDC Timing Constraints for PicoRV32 RISC-V SoC
+# Target: 50 MHz (20 ns period) on GF180MCU-D
+# Used by both picorv32_core.yaml (core hardening) and soc_core_top.yaml (chip-top)
+
+# --- Primary clock ---
+set clk_period $::env(CLOCK_PERIOD)
+set clk_name   $::env(CLOCK_PORT)
+set clk_port   [get_ports $clk_name]
+
+create_clock -name $clk_name -period $clk_period $clk_port
+
+# --- Clock uncertainty (conservative for sky130) ---
+set_clock_uncertainty 0.5 [get_clocks $clk_name]
+
+# --- Input/Output delays (assume 25% of period for I/O timing) ---
+set io_delay [expr {$clk_period * 0.25}]
+
+set_input_delay  $io_delay -clock $clk_name [all_inputs]
+set_output_delay $io_delay -clock $clk_name [all_outputs]
+
+# --- Remove clock from input delay (it drives itself) ---
+set_input_delay 0.0 -clock $clk_name $clk_port
+
+# --- False paths for reset (async assert, sync deassert) ---
+if {[llength [get_ports -quiet rst_ni]] > 0} {
+    set_false_path -from [get_ports rst_ni]
+} elseif {[llength [get_ports -quiet resetn]] > 0} {
+    set_false_path -from [get_ports resetn]
+}
+
+# --- JTAG clock domain (TCK is asynchronous to main clock) ---
+# If jtag_tck_i exists, create a separate clock domain
+if {[llength [get_ports -quiet jtag_tck_i]] > 0} {
+    create_clock -name jtag_tck -period 100.0 [get_ports jtag_tck_i]
+    set_clock_groups -asynchronous \
+        -group [get_clocks $clk_name] \
+        -group [get_clocks jtag_tck]
+}
