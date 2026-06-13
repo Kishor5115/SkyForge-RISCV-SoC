@@ -129,6 +129,7 @@ harden_core = textwrap.dedent(f"""
     librelane librelane/picorv32_core.yaml \\\\
         --pdk {PDK_NAME} \\\\
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
+        --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/picorv32_axi
 """).strip()
 
@@ -210,6 +211,7 @@ chip_top = textwrap.dedent(f"""
     librelane librelane/soc_core_top.yaml \\\\
         --pdk {PDK_NAME} \\\\
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
+        --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/soc_core
 """).strip()
 
