@@ -1,0 +1,78 @@
+# LibreLane Classic flow: top-level soc_core integration.
+# References hardened PicoRV32 core macro AND OpenRAM SRAM macros.
+# The MACROS block is dynamically patched by docker_asic_flow.py.
+# Target: sky130A, sky130_fd_sc_hd standard cells (1.8 V).
+
+meta:
+  version: 3
+  flow: Classic
+
+DESIGN_NAME: soc_core
+
+VERILOG_FILES:
+  - dir::../rtl/asic/soc_core.sv
+  - dir::../rtl/boot/boot_fsm.sv
+  - dir::../rtl/boot/reset_clk.sv
+  - dir::../rtl/interconnect/axi_interconnect_2m.sv
+  - dir::../rtl/interconnect/axi2apb_bridge.sv
+  - dir::../rtl/interconnect/apb_interconnect.sv
+  - dir::../rtl/interconnect/irq_aggregator.sv
+  - dir::../rtl/memory/sram_axi.sv
+  - dir::../rtl/memory/boot_rom.sv
+  - dir::../rtl/memory/sky130_sram_4kbyte_1rw_32x1024_8.sv
+  - dir::../rtl/peripherals/uart/uart_ctrl_apb.sv
+  - dir::../rtl/peripherals/uart/uart_tx.sv
+  - dir::../rtl/peripherals/uart/uart_rx.sv
+  - dir::../rtl/peripherals/uart/uart_fifo.sv
+  - dir::../rtl/peripherals/gpio/gpio_apb.sv
+  - dir::../rtl/peripherals/timer/timer_apb.sv
+  - dir::../rtl/peripherals/spi/spi_master_apb.sv
+  - dir::../rtl/peripherals/debug/debug_dm.sv
+  - dir::../rtl/peripherals/debug/jtag_dtm.sv
+  - dir::../rtl/peripherals/debug/debug_apb.sv
+  - dir::../rtl/peripherals/flash/flash_ctrl.sv
+
+CLOCK_PORT: clk_i
+CLOCK_NET: clk_i
+CLOCK_PERIOD: 20  # 50 MHz
+
+# --- Floorplanning (professional SoC-grade) ---
+# Inspired by SiFive FE310/E-class die layouts with large on-chip SRAM.
+# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x2 array occupies
+# the top ~half of the die. Core logic + peripherals fill the bottom.
+FP_SIZING: absolute
+DIE_AREA: "0 0 2200 2600"
+FP_CORE_UTIL: 40
+PL_TARGET_DENSITY_PCT: 45
+
+# Macro placement halos (SiFive-style generous spacing for PDN integrity)
+PL_MACRO_HALO: "20 20"
+PL_MACRO_CHANNEL: "30 30"
+
+# --- Power Distribution ---
+FP_PDN_HORIZONTAL_HALO: 8
+FP_PDN_VERTICAL_HALO: 8
+
+# --- Routing (sky130 met1..met5) ---
+RT_MIN_LAYER: met1
+RT_MAX_LAYER: met5
+GRT_ADJUSTMENT: 0.15
+GRT_OVERFLOW_ITERS: 150
+GRT_ALLOW_CONGESTION: true
+
+# --- Synthesis ---
+SYNTH_STRATEGY: "DELAY 3"
+
+# --- LVS: blackbox the SRAM (no SPICE netlist for behavioral macro) ---
+LVS_FLATTEN_CELLS:
+  - sky130_sram_4kbyte_1rw_32x1024_8
+
+# --- SDC ---
+PNR_SDC_FILE: dir::soc_core.sdc
+SIGNOFF_SDC_FILE: dir::soc_core.sdc
+
+# ============================================================
+# MACROS and PDN_MACRO_CONNECTIONS are dynamically patched by
+# docker_asic_flow.py (Step 4: patch_top). See that script for
+# the per-corner Liberty mapping and instance placement.
+# ============================================================
