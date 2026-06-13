@@ -215,16 +215,7 @@ module soc_core #(
     // ------------------------------------------------------------
     // CPU core
     // ------------------------------------------------------------
-    picorv32_axi #(
-        .ENABLE_IRQ        (1),
-        .ENABLE_IRQ_QREGS  (1),
-        .ENABLE_IRQ_TIMER  (1),
-        .ENABLE_MUL        (1),               // RV32M: multiply
-        .ENABLE_DIV        (1),               // RV32M: divide/remainder
-        .PROGADDR_RESET    (32'h0000_0000),    // Boot ROM reset vector
-        .PROGADDR_IRQ      (PROGADDR_IRQ),    // IRQ vector in SRAM (linker: .org 0x10 in SRAM)
-        .STACKADDR         (32'h0001_7FFC)     // Top of 32KB SRAM
-    ) u_cpu (
+    picorv32_axi u_cpu (
         .clk            (clk_i),
         .resetn         (rst_ni),
         .trap           (trap_o),
