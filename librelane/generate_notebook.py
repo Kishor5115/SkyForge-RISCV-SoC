@@ -36,7 +36,7 @@ RUN_CHIP_TOP       = False   # Step 5
 RUN_SIGNOFF_REPORT = False   # Step 6
 
 # --- Container ---
-CONTAINER_NAME = 'gf180'
+CONTAINER_NAME = 'riscv-soc'
 
 # --- PDK: sky130A (pre-installed in iic-osic-tools container) ---
 PDK_NAME           = 'sky130A'
