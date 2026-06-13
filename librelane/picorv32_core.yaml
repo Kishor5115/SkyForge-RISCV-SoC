@@ -1,0 +1,39 @@
+# LibreLane Classic flow: standalone hardening of the PicoRV32 core macro.
+# Produces GDS/LEF/Liberty/Verilog netlist views consumed by soc_core_top.yaml.
+# Target: sky130A, sky130_fd_sc_hd standard cells (1.8 V).
+
+meta:
+  version: 3
+  flow: Classic
+
+DESIGN_NAME: picorv32_axi
+
+VERILOG_FILES:
+  - dir::../rtl/core/picorv32.sv
+  - dir::../rtl/core/picorv32_axi.sv
+  - dir::../rtl/core/picorv32_axi_adapter.sv
+  - dir::../rtl/core/picorv32_pcpi.sv
+
+CLOCK_PORT: clk
+CLOCK_NET: clk
+CLOCK_PERIOD: 20  # 50 MHz target
+
+# --- Floorplanning ---
+# PicoRV32 is a moderate-size core (~3-5K gates with MUL/DIV).
+# Professional RISC-V SoCs (SiFive E-class) target 30-40% utilization
+# for the core block to leave routing headroom.
+FP_SIZING: relative
+FP_CORE_UTIL: 25
+PL_TARGET_DENSITY_PCT: 35
+
+# --- Synthesis ---
+SYNTH_STRATEGY: "DELAY 3"
+
+# --- Routing (sky130 met1..met5) ---
+RT_MIN_LAYER: met1
+RT_MAX_LAYER: met5
+GRT_ALLOW_CONGESTION: true
+
+# --- SDC ---
+PNR_SDC_FILE: dir::soc_core.sdc
+SIGNOFF_SDC_FILE: dir::soc_core.sdc
