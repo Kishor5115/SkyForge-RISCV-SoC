@@ -41,17 +41,15 @@ CLOCK_PERIOD: 20  # 50 MHz
 # Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x2 array occupies
 # the top ~half of the die. Core logic + peripherals fill the bottom.
 FP_SIZING: absolute
-DIE_AREA: "0 0 2200 2600"
+DIE_AREA: [0, 0, 2200, 2600]
 FP_CORE_UTIL: 40
 PL_TARGET_DENSITY_PCT: 45
 
-# Macro placement halos (SiFive-style generous spacing for PDN integrity)
-PL_MACRO_HALO: "20 20"
-PL_MACRO_CHANNEL: "30 30"
+# Macro placement halos (Handled explicitly by manual coordinates)
 
 # --- Power Distribution ---
-FP_PDN_HORIZONTAL_HALO: 8
-FP_PDN_VERTICAL_HALO: 8
+PDN_HORIZONTAL_HALO: 8
+PDN_VERTICAL_HALO: 8
 
 # --- Routing (sky130 met1..met5) ---
 RT_MIN_LAYER: met1
