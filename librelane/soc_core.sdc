@@ -15,11 +15,9 @@ set_clock_uncertainty 0.5 [get_clocks $clk_name]
 # --- Input/Output delays (assume 25% of period for I/O timing) ---
 set io_delay [expr {$clk_period * 0.25}]
 
-set_input_delay  $io_delay -clock $clk_name [all_inputs]
+set non_clock_inputs [remove_from_collection [all_inputs] [get_ports $clk_name]]
+set_input_delay  $io_delay -clock $clk_name $non_clock_inputs
 set_output_delay $io_delay -clock $clk_name [all_outputs]
-
-# --- Remove clock from input delay (it drives itself) ---
-set_input_delay 0.0 -clock $clk_name $clk_port
 
 # --- False paths for reset (async assert, sync deassert) ---
 if {[llength [get_ports -quiet rst_ni]] > 0} {
