@@ -24,15 +24,22 @@ CLOCK_PERIOD: 20  # 50 MHz target
 # for the core block to leave routing headroom.
 FP_SIZING: relative
 FP_CORE_UTIL: 25
-PL_TARGET_DENSITY_PCT: 35
+PL_TARGET_DENSITY_PCT: 30
 
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 
-# --- Routing (sky130 met1..met5) ---
-RT_MIN_LAYER: met1
+# --- Routing (sky130 li1..met5) ---
+# li1 is MANDATORY for sky130 - it is the layer that actually connects
+# to standard cell pins. Without li1, clock buffers have no access point.
+RT_MIN_LAYER: li1
 RT_MAX_LAYER: met5
 GRT_ALLOW_CONGESTION: true
+
+# --- Clock Tree Synthesis ---
+# Limit fanout per buffer to reduce the 2349-terminal net
+CTS_CLK_BUFFER_LIST: ["sky130_fd_sc_hd__clkbuf_4", "sky130_fd_sc_hd__clkbuf_8"]
+MAX_FANOUT_CONSTRAINT: 16
 
 # --- SDC ---
 PNR_SDC_FILE: dir::soc_core.sdc
