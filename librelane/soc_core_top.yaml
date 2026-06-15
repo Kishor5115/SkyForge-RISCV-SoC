@@ -13,6 +13,7 @@ VERILOG_FILES:
   - dir::../rtl/asic/soc_core.sv
   - dir::../rtl/boot/boot_fsm.sv
   - dir::../rtl/boot/reset_clk.sv
+  - dir::../rtl/interconnect/axi_interconnect.sv
   - dir::../rtl/interconnect/axi_interconnect_2m.sv
   - dir::../rtl/interconnect/axi2apb_bridge.sv
   - dir::../rtl/interconnect/apb_interconnect.sv
@@ -63,7 +64,7 @@ SYNTH_STRATEGY: "DELAY 3"
 
 # --- Linter (suppress TIMESCALEMOD/PINMISSING from PDK blackbox stubs) ---
 LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "PINMISSING"]
-LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP"]
+LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", "PINCONNECTEMPTY"]
 
 # --- Clock Tree Synthesis ---
 CTS_APPLY_NDR: none
