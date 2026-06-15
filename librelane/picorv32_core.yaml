@@ -1,5 +1,11 @@
-# LibreLane Classic flow: standalone hardening of the PicoRV32 core macro.
-# Produces GDS/LEF/Liberty/Verilog netlist views consumed by soc_core_top.yaml.
+# LibreLane Classic flow — standalone hardening of the PicoRV32 core macro.
+# Produces GDS/LEF/Liberty/Verilog views consumed by soc_core_top.yaml.
+#
+# Baseline mirrors the canonical OpenLane `picorv32a` reference config
+# (FP_CORE_UTIL 35, PL_TARGET_DENSITY 0.5, default sky130 met1..met5 routing).
+# PicoRV32 is a well-proven core that hardens cleanly with these standard
+# settings — so this config keeps to defaults and changes only what is needed.
+#
 # Target: sky130A, sky130_fd_sc_hd standard cells (1.8 V).
 
 meta:
@@ -14,32 +20,34 @@ VERILOG_FILES:
   - dir::../rtl/core/picorv32_axi_adapter.sv
   - dir::../rtl/core/picorv32_pcpi.sv
 
+# --- Clock ---
 CLOCK_PORT: clk
 CLOCK_NET: clk
 CLOCK_PERIOD: 20  # 50 MHz target
 
-# --- Floorplanning ---
-# PicoRV32 is a moderate-size core (~3-5K gates with MUL/DIV).
-# Professional RISC-V SoCs (SiFive E-class) target 30-40% utilization
-# for the core block to leave routing headroom.
+# --- Floorplanning (canonical picorv32a values) ---
 FP_SIZING: relative
-FP_CORE_UTIL: 25
-PL_TARGET_DENSITY_PCT: 30
+FP_CORE_UTIL: 35
+PL_TARGET_DENSITY_PCT: 50
 
 # --- Synthesis ---
-SYNTH_STRATEGY: "DELAY 3"
+SYNTH_STRATEGY: "AREA 0"
 
-# --- Routing (sky130 li1..met5) ---
-# li1 is MANDATORY for sky130 - it is the layer that actually connects
-# to standard cell pins. Without li1, clock buffers have no access point.
-RT_MIN_LAYER: li1
-RT_MAX_LAYER: met5
-GRT_ALLOW_CONGESTION: true
+# --- Routing ---
+# Use the sky130A PDK defaults (RT_MIN_LAYER met1, RT_MAX_LAYER met5).
+# li1 is local-interconnect only; the router reaches li1 cell pins through the
+# licon/mcon via stack automatically. (Do NOT force routing onto li1.)
 
 # --- Clock Tree Synthesis ---
-# Limit fanout per buffer to reduce the 2349-terminal net
-CTS_CLK_BUFFER_LIST: ["sky130_fd_sc_hd__clkbuf_4", "sky130_fd_sc_hd__clkbuf_8"]
-MAX_FANOUT_CONSTRAINT: 16
+# DRT-0073 ROOT CAUSE & FIX:
+# The default CTS_APPLY_NDR="half" applies a 2X-spacing non-default rule to
+# clock nets. On a dense core like PicoRV32 (~2.3k flops + hold buffers) that
+# doubled clock-wire spacing leaves the detailed router unable to form a legal
+# access point to the clkbuf input (A) pins → "DRT-0073 No access point for
+# clkbuf_*/A" on every clock buffer. A sparse design (e.g. the spm example)
+# has room to absorb the NDR, which is why it routes fine and this did not.
+# Disabling the clock NDR removes the spacing that blocks clkbuf pin access.
+CTS_APPLY_NDR: none
 
 # --- SDC ---
 PNR_SDC_FILE: dir::soc_core.sdc

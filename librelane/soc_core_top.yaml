@@ -38,10 +38,10 @@ CLOCK_PERIOD: 20  # 50 MHz
 
 # --- Floorplanning (professional SoC-grade) ---
 # Inspired by SiFive FE310/E-class die layouts with large on-chip SRAM.
-# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x2 array occupies
-# the top ~half of the die. Core logic + peripherals fill the bottom.
+# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x4 array (8 banks = 32 KB)
+# occupies the top ~2/3 of the die. Core logic + peripherals fill the bottom.
 FP_SIZING: absolute
-DIE_AREA: [0, 0, 2200, 2600]
+DIE_AREA: [0, 0, 2200, 3300]
 FP_CORE_UTIL: 40
 PL_TARGET_DENSITY_PCT: 45
 

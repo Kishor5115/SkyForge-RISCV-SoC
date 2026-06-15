@@ -1,6 +1,6 @@
 # SDC Timing Constraints for PicoRV32 RISC-V SoC
-# Target: 50 MHz (20 ns period) on GF180MCU-D
-# Used by both picorv32_core.yaml (core hardening) and soc_core_top.yaml (chip-top)
+# Target: 50 MHz (20 ns period) on sky130A
+# Used by both picorv32_core.yaml and soc_core_top.yaml
 
 # --- Primary clock ---
 set clk_period $::env(CLOCK_PERIOD)
@@ -15,11 +15,12 @@ set_clock_uncertainty 0.5 [get_clocks $clk_name]
 # --- Input/Output delays (assume 25% of period for I/O timing) ---
 set io_delay [expr {$clk_period * 0.25}]
 
-set_input_delay  $io_delay -clock $clk_name [all_inputs]
+# Exclude the clock port itself — OpenSTA does not support remove_from_collection.
+# Use lsearch/lreplace on the Tcl list returned by [all_inputs] instead.
+set clk_indx [lsearch [all_inputs] $clk_port]
+set non_clk_inputs [lreplace [all_inputs] $clk_indx $clk_indx ""]
+set_input_delay  $io_delay -clock $clk_name $non_clk_inputs
 set_output_delay $io_delay -clock $clk_name [all_outputs]
-
-# --- Remove clock from input delay (it drives itself) ---
-set_input_delay 0.0 -clock $clk_name $clk_port
 
 # --- False paths for reset (async assert, sync deassert) ---
 if {[llength [get_ports -quiet rst_ni]] > 0} {
@@ -29,7 +30,6 @@ if {[llength [get_ports -quiet rst_ni]] > 0} {
 }
 
 # --- JTAG clock domain (TCK is asynchronous to main clock) ---
-# If jtag_tck_i exists, create a separate clock domain
 if {[llength [get_ports -quiet jtag_tck_i]] > 0} {
     create_clock -name jtag_tck -period 100.0 [get_ports jtag_tck_i]
     set_clock_groups -asynchronous \
