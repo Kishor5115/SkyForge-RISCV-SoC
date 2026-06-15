@@ -61,6 +61,12 @@ GRT_ALLOW_CONGESTION: true
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 
+# --- Linter (suppress TIMESCALEMOD from PDK blackbox stubs) ---
+LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD"]
+
+# --- Clock Tree Synthesis ---
+CTS_APPLY_NDR: none
+
 # --- LVS: blackbox the SRAM (no SPICE netlist for behavioral macro) ---
 LVS_FLATTEN_CELLS:
   - sky130_sram_4kbyte_1rw_32x1024_8
