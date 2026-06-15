@@ -5,6 +5,11 @@
  * Source: https://github.com/YosysHQ/picorv32  (ISC license)
  */
 
+/* verilator lint_off WIDTHEXPAND */
+/* verilator lint_off WIDTHTRUNC */
+/* verilator lint_off UNUSEDSIGNAL */
+/* verilator lint_off CASEINCOMPLETE */
+
 module picorv32_pcpi_mul #(
 	parameter STEPS_AT_ONCE = 1,
 	parameter CARRY_CHAIN = 4
@@ -41,6 +46,7 @@ module picorv32_pcpi_mul #(
 				3'b001: instr_mulh <= 1;
 				3'b010: instr_mulhsu <= 1;
 				3'b011: instr_mulhu <= 1;
+				default: ; // remaining encodings are reserved per RV32M spec
 			endcase
 		end
 
@@ -156,6 +162,7 @@ module picorv32_pcpi_div (
 				3'b101: instr_divu <= 1;
 				3'b110: instr_rem <= 1;
 				3'b111: instr_remu <= 1;
+				default: ; // remaining encodings are reserved per RV32M spec
 			endcase
 		end
 

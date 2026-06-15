@@ -21,6 +21,7 @@
 /* verilator lint_off PINMISSING */
 /* verilator lint_off CASEOVERLAP */
 /* verilator lint_off CASEINCOMPLETE */
+/* verilator lint_off UNUSEDSIGNAL */
 
 `timescale 1 ns / 1 ps
 
