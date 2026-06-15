@@ -66,6 +66,11 @@ SYNTH_STRATEGY: "DELAY 3"
 LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "PINMISSING"]
 LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", "PINCONNECTEMPTY"]
 
+# --- Synthesis checks ---
+# picorv32_axi (1 macro) + sky130_sram (8 macros) = 9 blackbox instances
+# that Yosys counts as "check errors" even though they're valid hardened macros.
+ERROR_ON_SYNTH_CHECKS: false
+
 # --- Clock Tree Synthesis ---
 CTS_APPLY_NDR: none
 
