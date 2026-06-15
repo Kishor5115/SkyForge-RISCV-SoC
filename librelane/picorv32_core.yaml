@@ -33,6 +33,9 @@ PL_TARGET_DENSITY_PCT: 50
 # --- Synthesis ---
 SYNTH_STRATEGY: "AREA 0"
 
+# --- Linter (suppress TIMESCALEMOD from PDK blackbox stubs) ---
+LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD"]
+
 # --- Routing ---
 # Use the sky130A PDK defaults (RT_MIN_LAYER met1, RT_MAX_LAYER met5).
 # li1 is local-interconnect only; the router reaches li1 cell pins through the
