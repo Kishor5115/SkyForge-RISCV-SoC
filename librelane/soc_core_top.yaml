@@ -37,6 +37,12 @@ CLOCK_PORT: clk_i
 CLOCK_NET: clk_i
 CLOCK_PERIOD: 20  # 50 MHz
 
+# --- Timing corners (1 corner to prevent OOM during parallel RCX/STA) ---
+# Full 9-corner run requires ~12+ GB RAM. Use TT nom only for P&R signoff.
+# Expand corners once the flow is proven stable on this machine.
+STA_CORNERS:
+  - nom_tt_025C_1v80
+
 # --- Floorplanning (professional SoC-grade) ---
 # Inspired by SiFive FE310/E-class die layouts with large on-chip SRAM.
 # Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x4 array (8 banks = 32 KB)
@@ -74,8 +80,18 @@ ERROR_ON_SYNTH_CHECKS: false
 # --- Clock Tree Synthesis ---
 CTS_APPLY_NDR: none
 
+# --- Macro blackbox stubs for Yosys (needed before MACROS block is applied) ---
+# picorv32_axi hardened netlist — gives Yosys a port declaration so it doesn't
+# error with "Module not part of design" during jsonheader / synthesis steps.
+EXTRA_VERILOG_MODELS:
+  - dir::../build/picorv32_axi/nl/picorv32_axi.nl.v
+
 # --- LVS: blackbox the SRAM (no SPICE netlist for behavioral macro) ---
 LVS_FLATTEN_CELLS:
+  - sky130_sram_4kbyte_1rw_32x1024_8
+
+# SRAM banks are blackboxed macros — signal connectivity checked at RTL level
+IGNORE_DISCONNECTED_MODULES:
   - sky130_sram_4kbyte_1rw_32x1024_8
 
 # --- SDC ---

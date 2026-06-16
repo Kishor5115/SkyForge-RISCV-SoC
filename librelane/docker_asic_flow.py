@@ -211,7 +211,7 @@ def patch_top():
         'vh':  [str(core_base / 'nl'  / 'picorv32_axi.nl.v')],
         'lib': core_lib_map,
         'instances': {
-            'u_core': {'location': [400, 100], 'orientation': 'N'},
+            'u_cpu': {'location': [400, 100], 'orientation': 'N'},
         },
     }
 
@@ -256,7 +256,7 @@ def patch_top():
     # Format: "<instance regex> <vdd_net> <vss_net> <macro_vdd_pin> <macro_vss_pin>"
     # Chip-level power nets for sky130A are vccd1/vssd1.
     cfg['PDN_MACRO_CONNECTIONS'] = [
-        '.*u_core.* vccd1 vssd1 vccd1 vssd1',
+        '.*u_cpu.* vccd1 vssd1 vccd1 vssd1',
         '.*u_bank.* vccd1 vssd1 vccd1 vssd1',
     ]
     # Use vccd1/vssd1 as the top-level power nets (sky130A convention).
