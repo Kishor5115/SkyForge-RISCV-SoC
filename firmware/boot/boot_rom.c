@@ -75,36 +75,6 @@ static int flash_read_jedec(unsigned int *jedec_out)
     return 0;
 }
 
-static int flash_read_byte(unsigned int addr, unsigned char *data)
-{
-    mmio_write(FLASH_BASE + 0x0C, addr);
-    mmio_write(FLASH_BASE + 0x08, (1u << 8) | 0x03);  /* start=1, cmd=READ (0x03) */
-
-    unsigned int timeout = 100000;
-    while ((mmio_read(FLASH_BASE + 0x04) & 0x01) && timeout > 0)
-        timeout--;
-
-    if (timeout == 0) return -1;
-
-    unsigned int rx = mmio_read(FLASH_BASE + 0x14);
-    if (rx & (1u << 31)) return -1;  /* empty flag */
-    *data = (unsigned char)(rx & 0xFF);
-    return 0;
-}
-
-static int flash_read_word(unsigned int addr, unsigned int *data)
-{
-    unsigned char b[4];
-    for (int i = 0; i < 4; i++) {
-        if (flash_read_byte(addr + i, &b[i]) != 0)
-            return -1;
-    }
-    /* Little-endian assembly */
-    *data = (unsigned int)b[0] | ((unsigned int)b[1] << 8) |
-            ((unsigned int)b[2] << 16) | ((unsigned int)b[3] << 24);
-    return 0;
-}
-
 /* ================================================================== */
 /*  Debug Monitor (fallback if no application found)                    */
 /* ================================================================== */
@@ -203,97 +173,36 @@ void main(void)
         return;  /* Never reached */
     }
 
-    /* ── Step 4: Read Application Header from Flash ──────────── */
-    uart_puts("[BOOT] Reading application header from flash...\r\n");
+    /* ── Step 4: Enable Execute-In-Place (XIP) ───────────────── */
+    /* v2: instead of copying the application into SRAM (only 16 KB),
+     * we enable cached XIP so the CPU fetches .text/.rodata directly
+     * from external flash via the 1 KB I-Cache. This allows firmware
+     * larger than SRAM. */
+    uart_puts("[BOOT] Enabling flash XIP (execute-in-place)...\r\n");
 
-    unsigned int magic, app_size, entry_addr, checksum;
+    /* CTRL: [0]=enable, [1]=xip_en, [3:2]=addr_width(0=24-bit) */
+    mmio_write(FLASH_BASE + 0x00, 0x03u);   /* enable | xip_en, 24-bit addr */
+    delay(100);
 
-    if (flash_read_word(FLASH_IMAGE_HDR_OFF + 0x00, &magic) != 0 ||
-        flash_read_word(FLASH_IMAGE_HDR_OFF + 0x04, &app_size) != 0 ||
-        flash_read_word(FLASH_IMAGE_HDR_OFF + 0x08, &entry_addr) != 0 ||
-        flash_read_word(FLASH_IMAGE_HDR_OFF + 0x0C, &checksum) != 0) {
-        uart_puts("[BOOT] ERROR: Failed to read header from flash.\r\n");
-        debug_monitor();
-        return;
+    if (mmio_read(FLASH_BASE + 0x04) & (1u << 1)) {
+        uart_puts("[BOOT] XIP active.\r\n");
+    } else {
+        uart_puts("[BOOT] WARNING: xip_active not set; continuing anyway.\r\n");
     }
-
-    if (magic != APP_MAGIC) {
-        uart_puts("[BOOT] No valid application found (magic=");
-        uart_put_hex32(magic);
-        uart_puts(", expected=");
-        uart_put_hex32(APP_MAGIC);
-        uart_puts(")\r\n");
-        debug_monitor();
-        return;
-    }
-
-    uart_puts("[BOOT] Application found:\r\n");
-    uart_puts("       Size:  ");
-    uart_put_hex32(app_size);
-    uart_puts(" bytes\r\n");
-    uart_puts("       Entry: ");
-    uart_put_hex32(entry_addr);
-    uart_puts("\r\n");
     led_progress(4);
 
-    /* Sanity check */
-    if (app_size > 32768 || entry_addr < APP_ENTRY_ADDR) {
-        uart_puts("[BOOT] ERROR: Invalid app size or entry.\r\n");
-        debug_monitor();
-        return;
-    }
-
-    /* ── Step 5: Copy Application to SRAM ────────────────────── */
-    uart_puts("[BOOT] Copying ");
-    uart_put_hex32(app_size);
-    uart_puts(" bytes to SRAM at ");
-    uart_put_hex32(APP_ENTRY_ADDR);
-    uart_puts("...\r\n");
-
-    unsigned int xor_check = 0;
-    volatile unsigned char *sram = (volatile unsigned char *)APP_ENTRY_ADDR;
-
-    for (unsigned int i = 0; i < app_size; i++) {
-        unsigned char byte;
-        if (flash_read_byte(FLASH_IMAGE_DATA_OFF + i, &byte) != 0) {
-            uart_puts("[BOOT] ERROR: Flash read failed at offset ");
-            uart_put_hex32(i);
-            uart_puts("\r\n");
-            debug_monitor();
-            return;
-        }
-        sram[i] = byte;
-        xor_check ^= byte;
-
-        /* Progress dot every 1KB */
-        if ((i & 0x3FF) == 0) uart_putc('.');
-    }
-    uart_puts(" done\r\n");
-    led_progress(5);
-
-    /* ── Step 6: Verify Checksum ─────────────────────────────── */
-    if (xor_check != (checksum & 0xFF)) {
-        uart_puts("[BOOT] WARNING: Checksum mismatch (got=");
-        uart_put_hex(xor_check, 2);
-        uart_puts(", expected=");
-        uart_put_hex(checksum & 0xFF, 2);
-        uart_puts(")  Continuing anyway...\r\n");
-    } else {
-        uart_puts("[BOOT] Checksum OK\r\n");
-    }
-
-    /* ── Step 7: Jump to Application ─────────────────────────── */
+    /* ── Step 5: Jump to application in flash XIP window ──────── */
     uart_puts("[BOOT] Jumping to application at ");
-    uart_put_hex32(entry_addr);
+    uart_put_hex32(FLASH_XIP_BASE);
     uart_puts("...\r\n");
     uart_puts("════════════════════════════════════════════════════\r\n\r\n");
-    led_progress(6);
+    led_progress(5);
 
     /* Flush UART */
     delay(10000);
 
-    /* Jump to application entry point */
-    void (*app_entry)(void) = (void (*)(void))entry_addr;
+    /* Jump to the flash XIP reset vector (FreeRTOS _start) */
+    void (*app_entry)(void) = (void (*)(void))FLASH_XIP_BASE;
     app_entry();
 
     /* Should never return */

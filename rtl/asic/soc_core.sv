@@ -2,7 +2,7 @@ module soc_core #(
     parameter MEM_INIT_FILE       = "",
     parameter SRAM_INIT_FILE      = "",
     parameter BOOTROM_ADDR_WIDTH  = 8,  // 256 bytes (2^8 bytes = 0x00-0xFF)
-    parameter PROGADDR_IRQ        = 32'h00010010 // Default: SRAM
+    parameter PROGADDR_IRQ        = 32'h40010010 // v2: IRQ vector in flash XIP (was SRAM 0x10010)
 )(
     input  logic         clk_i,
     input  logic         rst_ni,
@@ -367,13 +367,13 @@ module soc_core #(
     );
 
     sram_axi #(
-        .ADDR_WIDTH(15),
+        .ADDR_WIDTH(14),
         .DATA_WIDTH(32),
         .SRAM_INIT_FILE(SRAM_INIT_FILE)
     ) u_sram (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s1_awaddr[14:0]),
+        .axi_awaddr  (s1_awaddr[13:0]),
         .axi_awprot  (s1_awprot),
         .axi_awvalid (s1_awvalid),
         .axi_awready (s1_awready),
@@ -384,7 +384,7 @@ module soc_core #(
         .axi_bvalid  (s1_bvalid),
         .axi_bready  (s1_bready),
         .axi_bresp   (s1_bresp),
-        .axi_araddr  (s1_araddr[14:0]),
+        .axi_araddr  (s1_araddr[13:0]),
         .axi_arprot  (s1_arprot),
         .axi_arvalid (s1_arvalid),
         .axi_arready (s1_arready),
@@ -394,11 +394,11 @@ module soc_core #(
         .axi_rresp   (s1_rresp)
     );
 
-    flash_ctrl u_flash (
+    flash_xip u_flash (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        // Register AXI port (directly on S2 for addresses < 0x100)
-        .axi_awaddr  (s2_awaddr[7:0]),
+        // Full S2 AXI region 0x4000_0000-0x40FF_FFFF (regs + cached XIP)
+        .axi_awaddr  (s2_awaddr),
         .axi_awprot  (s2_awprot),
         .axi_awvalid (s2_awvalid),
         .axi_awready (s2_awready),
@@ -409,7 +409,7 @@ module soc_core #(
         .axi_bvalid  (s2_bvalid),
         .axi_bready  (s2_bready),
         .axi_bresp   (s2_bresp),
-        .axi_araddr  (s2_araddr[7:0]),
+        .axi_araddr  (s2_araddr),
         .axi_arprot  (s2_arprot),
         .axi_arvalid (s2_arvalid),
         .axi_arready (s2_arready),
@@ -417,25 +417,7 @@ module soc_core #(
         .axi_rvalid  (s2_rvalid),
         .axi_rready  (s2_rready),
         .axi_rresp   (s2_rresp),
-        // XIP port — directly memory-mapped reads (active when xip_en)
-        .xip_araddr  (32'h0),
-        .xip_arvalid (1'b0),
-        .xip_arready (),
-        .xip_rdata   (),
-        .xip_rvalid  (),
-        .xip_rready  (1'b0),
-        .xip_rresp   (),
-        .xip_awaddr  (32'h0),
-        .xip_awvalid (1'b0),
-        .xip_awready (),
-        .xip_wdata   (32'h0),
-        .xip_wvalid  (1'b0),
-        .xip_wready  (),
-        .xip_wstrb   (4'h0),
-        .xip_bvalid  (),
-        .xip_bready  (1'b0),
-        .xip_bresp   (),
-        // QSPI pins
+        // QSPI pins (external flash chip)
         .flash_sclk  (flash_sclk_o),
         .flash_cs_n  (flash_cs_n_o),
         .flash_mosi  (flash_mosi_o),

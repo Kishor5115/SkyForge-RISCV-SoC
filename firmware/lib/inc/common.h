@@ -13,7 +13,8 @@
 #define GPIO_BASE        0x20002000u
 #define SPI_BASE         0x20003000u
 #define DEBUG_BASE       0x20004000u
-#define FLASH_BASE       0x40000000u
+#define FLASH_BASE       0x40000000u   /* flash controller registers (0x40000000-0x4000FFFF) */
+#define FLASH_XIP_BASE   0x40010000u   /* flash XIP memory window (cached), maps to flash offset 0x10000 */
 #define SRAM_BASE        0x00010000u
 #define BOOTROM_BASE     0x00000000u
 

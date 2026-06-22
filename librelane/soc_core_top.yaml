@@ -20,6 +20,7 @@ VERILOG_FILES:
   - dir::../rtl/interconnect/irq_aggregator.sv
   - dir::../rtl/memory/sram_axi.sv
   - dir::../rtl/memory/boot_rom.sv
+  - dir::../rtl/memory/icache_1k.sv
   - dir::../rtl/memory/sky130_sram_4kbyte_1rw_32x1024_8.sv
   - dir::../rtl/peripherals/uart/uart_ctrl_apb.sv
   - dir::../rtl/peripherals/uart/uart_tx.sv
@@ -32,6 +33,7 @@ VERILOG_FILES:
   - dir::../rtl/peripherals/debug/jtag_dtm.sv
   - dir::../rtl/peripherals/debug/debug_apb.sv
   - dir::../rtl/peripherals/flash/flash_ctrl.sv
+  - dir::../rtl/peripherals/flash/flash_xip.sv
 
 CLOCK_PORT: clk_i
 CLOCK_NET: clk_i
@@ -43,16 +45,25 @@ CLOCK_PERIOD: 20  # 50 MHz
 STA_CORNERS:
   - nom_tt_025C_1v80
 
-# --- Floorplanning (professional SoC-grade) ---
-# Inspired by SiFive FE310/E-class die layouts with large on-chip SRAM.
-# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x4 array (8 banks = 32 KB)
-# occupies the top ~2/3 of the die. Core logic + peripherals fill the bottom.
+# --- Floorplanning (professional SoC-grade) — v2 ---
+# Inspired by SiFive FE310/E-class die layouts with on-chip SRAM.
+# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x2 array (4 banks = 16 KB)
+# is placed flush to the TOP of the die. CPU is centered horizontally below the
+# SRAM array; std-cell peripherals (incl. flash_ctrl + 1 KB I-Cache) fill the
+# bottom zone. The external QSPI flash chip is OFF-die (no flash macro here).
+# Die shrunk 2200x2600 -> 1800x2000 (~33% area reduction) now that there are
+# 4 SRAM banks instead of 8; utilization raised to 45%.
 FP_SIZING: absolute
-DIE_AREA: [0, 0, 2200, 3300]
-FP_CORE_UTIL: 40
-PL_TARGET_DENSITY_PCT: 45
+DIE_AREA: [0, 0, 1800, 2000]
+FP_CORE_UTIL: 45
+PL_TARGET_DENSITY_PCT: 60
 
 # Macro placement halos (Handled explicitly by manual coordinates)
+
+# --- I/O pin placement (peripheral-aware) ---
+# UART/clk/reset/status -> South, JTAG/SPI -> East, Flash QSPI -> West,
+# GPIO -> North (directly under the SRAM array). See soc_core_pins.cfg.
+FP_PIN_ORDER_CFG: dir::soc_core_pins.cfg
 
 # --- Power Distribution ---
 PDN_HORIZONTAL_HALO: 8
@@ -73,8 +84,9 @@ LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "
 LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", "PINCONNECTEMPTY"]
 
 # --- Synthesis checks ---
-# picorv32_axi (1 macro) + sky130_sram (8 macros) = 9 blackbox instances
+# picorv32_axi (1 macro) + sky130_sram (4 macros) = 5 blackbox instances [v2]
 # that Yosys counts as "check errors" even though they're valid hardened macros.
+# (The external QSPI flash is off-die; flash_ctrl/flash_xip/icache_1k are std cells.)
 ERROR_ON_SYNTH_CHECKS: false
 
 # --- Clock Tree Synthesis ---

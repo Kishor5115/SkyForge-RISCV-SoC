@@ -49,13 +49,20 @@ ifeq ($(FW_MODE),freertos)
     CFLAGS := $(CFLAGS_BASE) -I$(FREERTOS_SRC)/include
     LINKER_SCRIPT := linker.ld
     ASM_SRCS := start.S
+    # v2: emit an external-flash image (XIP sections) for the flash model
+    FLASH_IMG = $(APP).flash.bin $(APP).flash.hex
 else ifeq ($(FW_MODE),bootrom)
     CFLAGS := $(CFLAGS_BASE)
     LINKER_SCRIPT := linker_bootrom.ld
     ASM_SRCS := $(LIB_DIR)/src/crt0.S
+    FLASH_IMG :=
 else
     $(error Unsupported FW_MODE='$(FW_MODE)'; use FW_MODE=freertos or FW_MODE=bootrom)
 endif
+
+# Flash XIP sections (LMA in flash): laid out by load address in the binary.
+# Lowest LMA is 0x40010000 (.text.reset) -> binary byte 0 = flash offset 0x10000.
+FLASH_SECTIONS := -j .text.reset -j .text.irq -j .text -j .rodata -j .data
 
 ASFLAGS    := $(ARCH_FLAGS) -g
 
@@ -110,7 +117,7 @@ TARGET := $(APP)
 
 .PHONY: all clean
 
-all: $(TARGET).elf $(TARGET).hex $(TARGET).lst
+all: $(TARGET).elf $(TARGET).hex $(TARGET).lst $(FLASH_IMG)
 	@$(SIZE) $(TARGET).elf
 
 $(BUILD_DIR):
@@ -130,4 +137,13 @@ $(TARGET).hex: $(TARGET).elf ; $(OBJCOPY) --verilog-data-width=4 -O verilog $< $
 $(TARGET).lst: $(TARGET).elf
 	$(OBJDUMP) -d -S $< > $@
 
-clean: ; rm -rf $(BUILD_DIR); rm -f $(TARGET).elf $(TARGET).hex $(TARGET).lst $(TARGET).map; echo "Cleaned."
+# ── External-flash XIP image (v2) ────────────────────────────────
+# .flash.bin : raw image, byte 0 == flash offset 0x10000 (XIP base 0x40010000)
+# .flash.hex : one byte (hex) per line for $readmemh into the TB flash model
+$(TARGET).flash.bin: $(TARGET).elf
+	$(OBJCOPY) -O binary $(FLASH_SECTIONS) $< $@
+
+$(TARGET).flash.hex: $(TARGET).flash.bin
+	od -An -v -tx1 $< | tr -s ' ' '\n' | sed '/^$$/d' > $@
+
+clean: ; rm -rf $(BUILD_DIR); rm -f $(TARGET).elf $(TARGET).hex $(TARGET).lst $(TARGET).map $(TARGET).flash.bin $(TARGET).flash.hex; echo "Cleaned."

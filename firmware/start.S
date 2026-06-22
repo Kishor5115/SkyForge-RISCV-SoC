@@ -323,6 +323,19 @@ _init:
 
     la  sp, __stack_top
 
+    /* Copy .data from flash (LMA) to SRAM (VMA) — required for XIP boot */
+    la  t0, __data_lma
+    la  t1, __data_start
+    la  t2, __data_end
+    beq t1, t2, _data_done
+_data_loop:
+    lw   t3, 0(t0)
+    sw   t3, 0(t1)
+    addi t0, t0, 4
+    addi t1, t1, 4
+    blt  t1, t2, _data_loop
+_data_done:
+
     la  t0, __bss_start
     la  t1, __bss_end
     beq t0, t1, _bss_done

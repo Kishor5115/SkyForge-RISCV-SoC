@@ -5,17 +5,18 @@
  * This is the module to be wrapped inside Caravel user_project_wrapper.
  *
  * Memory Map:
- *   0x00000000 - 0x000000FF : Boot ROM (256 Bytes)
- *   0x00010000 - 0x00017FFF : SRAM (32KB, 8× OpenRAM 4KB)
+ *   0x00000000 - 0x00001FFF : Boot ROM
+ *   0x00010000 - 0x00013FFF : SRAM (16KB, 4× OpenRAM 4KB)   [v2]
  *   0x20000000 - 0x2000FFFF : APB Peripherals
- *   0x40000000 - 0x40FFFFFF : Flash Controller (QSPI + XIP)
+ *   0x40000000 - 0x4000FFFF : Flash controller registers     [v2]
+ *   0x40010000 - 0x40FFFFFF : Flash XIP memory (cached)       [v2]
  */
 
 module soc_top #(
     parameter MEM_INIT_FILE = "",
     parameter SRAM_INIT_FILE = "",
     parameter BOOTROM_ADDR_WIDTH = 8,
-    parameter PROGADDR_IRQ  = 32'h00010010
+    parameter PROGADDR_IRQ  = 32'h40010010   // v2: IRQ vector in flash XIP
 )(
     input  logic        clk,
     input  logic        rst_n,          // Async active-low reset

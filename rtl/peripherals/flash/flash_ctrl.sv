@@ -623,12 +623,14 @@ module flash_ctrl #(
                             shift_in <= {shift_in[6:0], flash_miso};
                             bit_cnt  <= bit_cnt + 1;
                             if (bit_cnt[2:0] == 3'd7) begin
+                                // Little-endian: first flash byte (lowest addr)
+                                // goes to bits [7:0] so CPU fetches are correct.
                                 case (byte_cnt)
-                                    3'd0: xip_read_buf[31:24] <= {shift_in[6:0], flash_miso};
-                                    3'd1: xip_read_buf[23:16] <= {shift_in[6:0], flash_miso};
-                                    3'd2: xip_read_buf[15:8]  <= {shift_in[6:0], flash_miso};
+                                    3'd0: xip_read_buf[7:0]   <= {shift_in[6:0], flash_miso};
+                                    3'd1: xip_read_buf[15:8]  <= {shift_in[6:0], flash_miso};
+                                    3'd2: xip_read_buf[23:16] <= {shift_in[6:0], flash_miso};
                                     3'd3: begin
-                                        xip_read_buf[7:0] <= {shift_in[6:0], flash_miso};
+                                        xip_read_buf[31:24] <= {shift_in[6:0], flash_miso};
                                         state <= S_COMPLETE;
                                     end
                                     default: ;
