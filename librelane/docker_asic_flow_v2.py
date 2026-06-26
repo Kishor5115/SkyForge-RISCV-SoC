@@ -34,12 +34,13 @@ import textwrap
 # ============================================================
 
 # --- Run flags (flip True one-at-a-time as you progress) ---
-RUN_STAGE_FILES    = False   # Step 1: copy project into bind-mount
-RUN_HARDEN_CORE    = False   # Step 2: harden picorv32_axi (~5-15 min) — reuse v1 if present
-RUN_GLSIM          = False   # Step 3: post-synthesis GL simulation
-RUN_PATCH_TOP      = False   # Step 4: patch soc_core_top.yaml with macros
-RUN_CHIP_TOP       = False   # Step 5: full soc_core flow (~30-90 min)
-RUN_SIGNOFF_REPORT = False   # Step 6: parse metrics.csv
+RUN_STAGE_FILES    = True    # Step 1: copy project into bind-mount
+RUN_HARDEN_CORE    = True    # Step 2: harden picorv32_axi (~5-15 min) — reuse v1 if present
+RUN_GLSIM          = True    # Step 3: post-synthesis GL simulation
+RUN_PATCH_TOP      = True    # Step 4: patch soc_core_top.yaml with macros
+RUN_CHIP_TOP       = True    # Step 5: full soc_core flow up to routing (~30 min)
+RUN_GDS            = True    # Step 6: streamout to GDS and signoff (~30-60 min)
+RUN_SIGNOFF_REPORT = True    # Step 7: parse metrics.csv
 
 # --- Container ---
 CONTAINER_NAME = 'riscv-soc'
@@ -51,10 +52,10 @@ CONTAINER_PDK_ROOT  = '/foss/pdks'   # /foss/pdks/sky130A exists in-container
 
 # --- Host paths ---
 PROJECT_ROOT    = Path(__file__).resolve().parent.parent
-HOST_WORKSPACE  = Path.home() / 'eda' / 'designs' / 'riscv_soc' / 'workspace'
+HOST_WORKSPACE  = Path.home() / 'eda' / 'designs' / 'sky-forge'
 
 # --- Container paths ---
-CONTAINER_WORKSPACE = '/foss/designs/riscv_soc/workspace'
+CONTAINER_WORKSPACE = '/foss/designs/sky-forge'
 
 # --- SRAM macro (OpenRAM-generated, sky130, already in project) ---
 # Power pins vccd1/vssd1, single TT_1p8V_25C corner, 808.845 x 351.29 um.
@@ -62,7 +63,8 @@ SRAM_NAME = 'sky130_sram_4kbyte_1rw_32x1024_8'
 
 # --- Run tags ---
 CORE_RUN_TAG = 'RUN_1_PICORV32'    # unchanged — reuse v1 hardened core
-TOP_RUN_TAG  = 'RUN_5_V2_SOC_TOP'  # v2 chip-top run
+TOP_RUN_TAG  = 'RUN_2_SOC_TOP_PD'  # v2 chip-top run (up to routing)
+GDS_RUN_TAG  = 'RUN_3_GDS'         # v2 chip-top run (streamout & signoff)
 
 # --- sky130A STA corners (per-corner .lib is MANDATORY in LibreLane v3) ---
 SKY130_CORNERS = [
@@ -266,7 +268,7 @@ def patch_top():
     # v2 floorplan / routing knobs (fewer macros -> denser, less congestion)
     cfg['DIE_AREA']             = [0, 0, 1800, 2000]
     cfg['PL_TARGET_DENSITY_PCT'] = 60   # was 55
-    cfg['GRT_ADJUSTMENT']        = 0.20 # was 0.25/0.15
+    cfg['GRT_ADJUSTMENT']        = 0.25 # increased to relieve met4 congestion (met4 short @ 1168,858)
     cfg['GRT_OVERFLOW_ITERS']    = 150  # was 200
 
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
@@ -281,7 +283,7 @@ def patch_top():
 # ============================================================
 
 def run_chip_top():
-    print("\n=== Step 5: Run soc_core chip-top flow (v2) ===")
+    print("\n=== Step 5: Run soc_core chip-top flow (up to routing) ===")
     script = textwrap.dedent(f'''
         set -e
         cd {CONTAINER_WORKSPACE}
@@ -290,17 +292,38 @@ def run_chip_top():
             --pdk-root {CONTAINER_PDK_ROOT} \\
             --scl {STD_CELL_LIB} \\
             --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\
-            --run-tag {TOP_RUN_TAG}
+            --run-tag {TOP_RUN_TAG} \\
+            --to OpenROAD.IRDropReport
     ''').strip()
     run_or_print(script, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
 
+# ============================================================
+# Step 6: Streamout to GDS & Signoff
+# ============================================================
+
+def run_chip_top_gds():
+    print("\n=== Step 6: Run soc_core GDS streamout & signoff ===")
+    script = textwrap.dedent(f'''
+        set -e
+        cd {CONTAINER_WORKSPACE}
+        librelane librelane/soc_core_top.yaml \\
+            --pdk {PDK_NAME} \\
+            --pdk-root {CONTAINER_PDK_ROOT} \\
+            --scl {STD_CELL_LIB} \\
+            --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\
+            --run-tag {GDS_RUN_TAG} \\
+            --from Magic.StreamOut \\
+            --with-initial-state librelane/runs/{TOP_RUN_TAG}/state_out.json
+    ''').strip()
+    run_or_print(script, RUN_GDS, shell_on_container=True, timeout=None)
+
 
 # ============================================================
-# Step 6: Parse signoff metrics
+# Step 7: Parse signoff metrics
 # ============================================================
 
 def signoff_report():
-    print("\n=== Step 6: Signoff Metrics Report ===")
+    print("\n=== Step 7: Signoff Metrics Report ===")
     metrics_path = HOST_WORKSPACE / 'build' / 'soc_core' / 'metrics.csv'
 
     if not RUN_SIGNOFF_REPORT:
@@ -371,6 +394,7 @@ def main():
     glsim()
     patch_top()
     run_chip_top()
+    run_chip_top_gds()
     signoff_report()
 
     print("\n" + "=" * 70)

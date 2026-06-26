@@ -28,12 +28,13 @@ from pathlib import Path
 import csv, shutil, subprocess, textwrap
 
 # --- Run flags (flip True one-at-a-time as you progress) ---
-RUN_STAGE_FILES    = False   # Step 1
-RUN_HARDEN_CORE    = False   # Step 2
-RUN_GLSIM          = False   # Step 3
-RUN_PATCH_TOP      = False   # Step 4
-RUN_CHIP_TOP       = False   # Step 5
-RUN_SIGNOFF_REPORT = False   # Step 6
+RUN_STAGE_FILES    = True    # Step 1
+RUN_HARDEN_CORE    = True    # Step 2
+RUN_GLSIM          = True    # Step 3
+RUN_PATCH_TOP      = True    # Step 4
+RUN_CHIP_TOP       = True    # Step 5
+RUN_GDS            = True    # Step 6
+RUN_SIGNOFF_REPORT = True    # Step 7
 
 # --- Container ---
 CONTAINER_NAME = 'riscv-soc'
@@ -45,8 +46,8 @@ CONTAINER_PDK_ROOT = '/foss/pdks'
 
 # --- Paths ---
 PROJECT_ROOT        = Path.cwd().parent if Path.cwd().name == 'librelane' else Path.cwd()
-HOST_WORKSPACE      = Path.home() / 'eda' / 'designs' / 'riscv_soc' / 'workspace'
-CONTAINER_WORKSPACE = '/foss/designs/riscv_soc/workspace'
+HOST_WORKSPACE      = Path.home() / 'eda' / 'designs' / 'sky-forge'
+CONTAINER_WORKSPACE = '/foss/designs/sky-forge'
 
 # --- OpenRAM SRAM macro (sky130, vccd1/vssd1, single TT corner) ---
 SRAM_NAME = 'sky130_sram_4kbyte_1rw_32x1024_8'
@@ -130,7 +131,8 @@ harden_core = textwrap.dedent(f"""
         --pdk {PDK_NAME} \\\\
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
         --scl {STD_CELL_LIB} \\\\
-        --save-views-to {CONTAINER_WORKSPACE}/build/picorv32_axi
+        --save-views-to {CONTAINER_WORKSPACE}/build/picorv32_axi \\\\
+        --run-tag RUN_1_PICORV32
 """).strip()
 
 run_or_print(harden_core, RUN_HARDEN_CORE, shell_on_container=True, timeout=1800)
@@ -180,9 +182,11 @@ def patch_top():
     }
     cfg['DIE_AREA'] = [0, 0, 1800, 2000]
     cfg['PL_TARGET_DENSITY_PCT'] = 60
-    cfg['GRT_ADJUSTMENT'] = 0.20
+    cfg['GRT_ADJUSTMENT'] = 0.25  # increased from 0.20 to relieve met4 congestion
     cfg['GRT_OVERFLOW_ITERS'] = 150
-    cfg['PDN_CFG'] = 'dir::pdn_cfg.tcl'
+    # NOTE: PDN_CFG intentionally omitted — the custom pdn_cfg.tcl was only needed
+    # for v1 rotated (E/W) SRAMs. v2 uses orientation N throughout; LibreLane's
+    # default PDN handles met4-pin native SRAMs correctly without extra met3↔met4 connects.
     cfg['PDN_MACRO_CONNECTIONS'] = [
         '.*u_cpu.* vccd1 vssd1 vccd1 vssd1',
         '.*u_bank.* vccd1 vssd1 vccd1 vssd1',
@@ -207,11 +211,30 @@ chip_top = textwrap.dedent(f"""
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
         --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\\\
-        --run-tag RUN_5_V2_SOC_TOP
+        --run-tag RUN_2_SOC_TOP_PD \\\\
+        --to OpenROAD.IRDropReport
 """).strip()
 
-# No timeout: chip-top + multi-macro signoff can run 30-90 min.
+# Stop before streamout to avoid memory overloading
 run_or_print(chip_top, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
+'''
+
+STEP5B_CODE = '''\
+chip_top_gds = textwrap.dedent(f"""
+    set -e
+    cd {CONTAINER_WORKSPACE}
+    librelane librelane/soc_core_top.yaml \\\\
+        --pdk {PDK_NAME} \\\\
+        --pdk-root {CONTAINER_PDK_ROOT} \\\\
+        --scl {STD_CELL_LIB} \\\\
+        --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\\\
+        --run-tag RUN_3_GDS \\\\
+        --from Magic.StreamOut \\\\
+        --with-initial-state librelane/runs/RUN_2_SOC_TOP_PD/state_out.json
+""").strip()
+
+# Continue from streamout to final signoff
+run_or_print(chip_top_gds, RUN_GDS, shell_on_container=True, timeout=None)
 '''
 
 STEP6_CODE = '''\
@@ -388,29 +411,33 @@ it under the new die width. The external QSPI flash is off-die, so there is no
 flash macro — only the CPU and 4 SRAM banks are hardened macros.""",
      STEP4_CODE),
 
-    ("## Step 5 -- Run the chip-top `soc_core` flow\n\n"
-     "Full synthesis -> floorplan -> PDN -> placement -> CTS -> routing -> "
-     "Magic+KLayout DRC -> Netgen LVS -> antenna -> multi-corner STA. "
-     "Runtime ~30-90 min (DRC dominates).",
+    ("## Step 5 -- Run the chip-top `soc_core` flow (Up to Streamout)\n\n"
+     "Full synthesis -> floorplan -> PDN -> placement -> CTS -> routing -> RCX -> STA -> IRDrop. "
+     "Stops right before streamout to prevent memory overloading. Runtime ~45 min.",
      STEP5_CODE),
 
-    ("## Step 6 -- Signoff metrics\n\n"
+    ("## Step 6 -- Streamout to GDS & Signoff\n\n"
+     "Continues from `Magic.StreamOut` to DRC, LVS, and multi-corner STA. "
+     "Runtime ~30-60 min.",
+     STEP5B_CODE),
+
+    ("## Step 7 -- Signoff metrics\n\n"
      "Parses `build/soc_core/metrics.csv` and prints Die Area, DRC/LVS/"
      "antenna counts, setup/hold violations, and total power with a "
      "**CLEAN / VIOLATIONS PRESENT** verdict.",
      STEP6_CODE),
 
-    ("## Step 7 -- soc_padring chip-level P&R flow\n\n"
+    ("## Step 8 -- soc_padring chip-level P&R flow\n\n"
      "Places 116 signal pads + power/gnd pads + corner cells around the "
      "hardened **soc_core** macro (3060×4240 µm die). Runtime ~20-30 min.",
      STEP7_CODE),
 
-    ("## Step 8 -- DRC (Magic + KLayout)\n\n"
+    ("## Step 9 -- DRC (Magic + KLayout)\n\n"
      "Runs Magic DRC (authoritative) and KLayout DRC on the padring GDS. "
      "~4755 KLayout errors on SRAM macro boundaries are a known sky130 false-positive.",
      STEP8_CODE),
 
-    ("## Step 9 -- LVS (Netgen)\n\n"
+    ("## Step 10 -- LVS (Netgen)\n\n"
      "Extracts SPICE from the padring layout and runs Netgen LVS. "
      "SRAM macros are blackboxed; the key check is soc_core pin connectivity.",
      STEP9_CODE),
@@ -425,7 +452,7 @@ flash macro — only the CPU and 4 SRAM banks are hardened macros.""",
 
 Cleanup:
 ```bash
-rm -rf ~/eda/designs/riscv_soc/workspace
+rm -rf ~/eda/designs/sky-forge
 docker stop gf180
 ```""", None),
 ]
