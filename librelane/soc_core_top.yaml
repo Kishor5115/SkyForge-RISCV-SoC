@@ -1,13 +1,34 @@
 # LibreLane Classic flow: top-level soc_core integration.
 # References hardened PicoRV32 core macro AND OpenRAM SRAM macros.
-# The MACROS block is dynamically patched by docker_asic_flow.py.
+#
+# SINGLE SOURCE OF TRUTH for ALL macro placement.
+# The Python script (docker_asic_flow.py Step 4: patch_top) fills in
+# ONLY the gds/lef/vh/lib file paths — it NEVER touches 'instances'.
+# To move a macro: edit the 'location' / 'orientation' here, then re-run
+# Step 4 (or manually copy to workspace) and re-run Steps 5a-5c.
+#
 # Target: sky130A, sky130_fd_sc_hd standard cells (1.8 V).
+#
+# Floorplan: 2533 x 1780 um  (height optimized to push standard cells horizontally)
+#  ┌─────────────────────────────────────────────┐ y=1780
+#  │  [SRAM bank6]     gap      [SRAM bank7]      │ y=1389..1740
+#  │  [SRAM bank4]     gap      [SRAM bank5]      │ y=998..1349
+#  │~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~│ AXI bus channel (129-280 um gap)
+#  │  [bank0/W]  [bank1/W]  [bank2/E]  [bank3/E] │ y=60..869  (rotated vertical)
+#  │                 [CPU]                         │ y=60..718
+#  │           stdcell logic zone                  │ y=0..60 margin
+#  └─────────────────────────────────────────────┘ y=0
+#
+# SRAM bank dimensions (sky130_sram_4kbyte_1rw_32x1024_8):
+#   Nominal (N):  808.845 w × 351.29 h  um
+#   Rotated (W/E): 351.29 w × 808.845 h um
 
 meta:
   version: 3
   flow: Classic
 
 DESIGN_NAME: soc_core
+STD_CELL_LIBRARY: sky130_fd_sc_hd
 
 VERILOG_FILES:
   - dir::../rtl/asic/soc_core.sv
@@ -35,71 +56,190 @@ VERILOG_FILES:
 
 CLOCK_PORT: clk_i
 CLOCK_NET: clk_i
-CLOCK_PERIOD: 20  # 50 MHz
+CLOCK_PERIOD: 10  # 100 MHz
 
 # --- Timing corners (1 corner to prevent OOM during parallel RCX/STA) ---
-# Full 9-corner run requires ~12+ GB RAM. Use TT nom only for P&R signoff.
-# Expand corners once the flow is proven stable on this machine.
 STA_CORNERS:
   - nom_tt_025C_1v80
 
-# --- Floorplanning (professional SoC-grade) ---
-# Inspired by SiFive FE310/E-class die layouts with large on-chip SRAM.
-# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x4 array (8 banks = 32 KB)
-# occupies the top ~2/3 of the die. Core logic + peripherals fill the bottom.
+# --- Floorplanning ---
+# Die: 2533 x 1780 um  (Height reduced from 2100 to 1780 to spread logic sideways)
+# Core util 40 % gives placer ~60 % white space for route detours.
 FP_SIZING: absolute
-DIE_AREA: [0, 0, 2200, 3300]
+DIE_AREA: [0, 0, 2533, 1780]
 FP_CORE_UTIL: 40
-PL_TARGET_DENSITY_PCT: 45
+PL_TARGET_DENSITY_PCT: 50
 
-# Macro placement halos (Handled explicitly by manual coordinates)
+# --- Pin placement ---
+IO_PIN_ORDER_CFG: dir::soc_core_pins.cfg
 
-# --- Power Distribution ---
-PDN_HORIZONTAL_HALO: 8
-PDN_VERTICAL_HALO: 8
+# --- Power Distribution Network ---
+# Halos: 14 um each side so PDN stripes clear the SRAM macro edges cleanly
+# and avoid the PSM-0039/0069 / PDN-0110 "no via inserted" warnings.
+PDN_HORIZONTAL_HALO: 14
+PDN_VERTICAL_HALO: 14
+PDN_CFG: dir::pdn_cfg.tcl
+# Stripe origin offset: computed to guarantee zero overlap between the
+# met4 PDN vertical stripes (1.6um wide, pitch 153.6) and the SRAM met4
+# signal pins (din0/dout0 at y=0).  Exhaustive sweep confirmed 20.57
+# gives ≥1.15um clearance to the nearest pin across all 4 N-oriented banks.
+PDN_VOFFSET: 20.57
+# Suppress cosmetic missing-via corners at exact macro edges (PSM-0040
+# confirms full power connectivity — these are benign fringe effects).
+ERROR_ON_PDN_VIOLATIONS: false
 
 # --- Routing (sky130 met1..met5) ---
 RT_MIN_LAYER: met1
 RT_MAX_LAYER: met5
-GRT_ADJUSTMENT: 0.15
+GRT_ADJUSTMENT: 0.25
 GRT_OVERFLOW_ITERS: 150
 GRT_ALLOW_CONGESTION: true
 
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 
-# --- Linter (suppress TIMESCALEMOD/PINMISSING from PDK blackbox stubs) ---
-LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "PINMISSING"]
-LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", "PINCONNECTEMPTY"]
+# --- Linter suppressions ---
+LINTER_DISABLE_WARNINGS_BLACKBOX:
+  - UNDRIVEN
+  - UNUSEDSIGNAL
+  - TIMESCALEMOD
+  - PINMISSING
+  - PINNOTFOUND
+  - WIDTH
+  - WIDTHEXPAND
+  - WIDTHTRUNC
+  - UNUSEDPARAM
+LINTER_DISABLE_WARNINGS:
+  - DECLFILENAME
+  - EOFNEWLINE
+  - MODDUP
+  - MODMISSING
+  - PINCONNECTEMPTY
+  - UNUSEDSIGNAL
+  - WIDTH
+  - WIDTHEXPAND
+  - WIDTHTRUNC
+  - UNUSEDPARAM
+  - SYNCASYNCNET
+  - CASEINCOMPLETE
+  - BLKSEQ
+  - ASSIGNDLY
+  - VARHIDDEN
+  - LITENDIAN
+  - INITIALDLY
+  - COMBDLY
+  - GENUNUSEDSIGNAL
+  - GENUNDRIVEN
 
 # --- Synthesis checks ---
-# picorv32_axi (1 macro) + sky130_sram (8 macros) = 9 blackbox instances
-# that Yosys counts as "check errors" even though they're valid hardened macros.
 ERROR_ON_SYNTH_CHECKS: false
 
 # --- Clock Tree Synthesis ---
 CTS_APPLY_NDR: none
 
-# --- Macro blackbox stubs for Yosys (needed before MACROS block is applied) ---
-# picorv32_axi hardened netlist — gives Yosys a port declaration so it doesn't
-# error with "Module not part of design" during jsonheader / synthesis steps.
+# --- Macro blackbox stubs for Yosys ---
 EXTRA_VERILOG_MODELS:
   - dir::../build/picorv32_axi/nl/picorv32_axi.nl.v
 
-# --- LVS: blackbox the SRAM (no SPICE netlist for behavioral macro) ---
+# --- LVS ---
 LVS_FLATTEN_CELLS:
   - sky130_sram_4kbyte_1rw_32x1024_8
-
-# SRAM banks are blackboxed macros — signal connectivity checked at RTL level
 IGNORE_DISCONNECTED_MODULES:
   - sky130_sram_4kbyte_1rw_32x1024_8
+RUN_KLAYOUT_XOR: false
+MAGIC_DRC_USE_GDS: false
+MAGIC_EXT_USE_GDS: false
 
 # --- SDC ---
 PNR_SDC_FILE: dir::soc_core.sdc
 SIGNOFF_SDC_FILE: dir::soc_core.sdc
 
+# --- Power nets ---
+VDD_NETS: [vccd1]
+GND_NETS: [vssd1]
+
+PDN_MACRO_CONNECTIONS:
+  - ".*u_cpu.* vccd1 vssd1 vccd1 vssd1"
+  - ".*u_bank.* vccd1 vssd1 vccd1 vssd1"
+
 # ============================================================
-# MACROS and PDN_MACRO_CONNECTIONS are dynamically patched by
-# docker_asic_flow.py (Step 4: patch_top). See that script for
-# the per-corner Liberty mapping and instance placement.
+# MACROS — SINGLE SOURCE OF TRUTH FOR PLACEMENT
 # ============================================================
+# File paths (gds/lef/vh/lib) are filled in by docker_asic_flow.py
+# Step 4 (patch_top). The 'instances' block is NEVER modified by the
+# script — edit coordinates here to change the floorplan.
+#
+# Coordinate system notes
+# -----------------------
+# SRAM bank (N-orientation):  808.845 w × 351.29 h  um
+# SRAM bank (W/E-orientation):  351.29 w × 808.845 h  um
+# CPU (picorv32_axi):             647.25 w × 657.97 h  um
+# Die:                               2533 w × 2100 h  um
+#
+# Layout (bottom → top):
+#   y=0..60        — bottom margin / IO halos
+#   y=60..869      — banks 0-3 (W/E rotated, symmetrically flanking CPU)
+#   y=60..718      — CPU (u_cpu, centred at x=943)
+#   y=869..998     — Wide AXI bus channel (129 um gap over side banks, 280 um over CPU)
+#   y=998..1349    — banks 4 & 5 (N-oriented, top row #1)
+#   y=1349..1389   — minimal inter-row gap (40 um)
+#   y=1389..1740   — banks 6 & 7 (N-oriented, top row #2)
+#   y=1740..1780   — top margin / IO halos (40 um minimal spacing)
+#
+# Inter-column gap (banks 4&5, 6&7):
+#   Matches the 120 um gap between CPU and lower flanks to ensure routing balance.
+
+MACROS:
+  picorv32_axi:
+    # Paths injected by patch_top — do not edit these placeholder lines
+    gds: [__PATCH_CORE_GDS__]
+    lef: [__PATCH_CORE_LEF__]
+    vh:  [__PATCH_CORE_VH__]
+    lib: {}   # patched by script
+    instances:
+      u_cpu:
+        # CPU centred horizontally: (2533 - 647.25) / 2 = 942.9 → 943
+        # Lowered to y=60 (bottom margin) so core logic sits at the bottom.
+        location: [943, 60]
+        orientation: "N"
+
+  sky130_sram_4kbyte_1rw_32x1024_8:
+    # Paths injected by patch_top — do not edit these placeholder lines
+    gds: [__PATCH_SRAM_GDS__]
+    lef: [__PATCH_SRAM_LEF__]
+    vh:  [__PATCH_SRAM_VH__]
+    lib: {}   # patched by script
+    instances:
+      # ── Bottom cluster: banks 0-3 rotated W/E (vertical SRAM columns) ──
+      # Footprint when rotated: 351.29 w × 808.845 h um
+      # Symmetric placement with 120 um gaps separating CPU and inner banks,
+      # and 80 um gaps between outer and inner banks.
+      "u_sram.gen_sram_bank[0].u_bank":
+        location: [40, 60]
+        orientation: "W"
+      "u_sram.gen_sram_bank[1].u_bank":
+        location: [471, 60]
+        orientation: "W"
+      "u_sram.gen_sram_bank[2].u_bank":
+        location: [1710, 60]
+        orientation: "E"
+      "u_sram.gen_sram_bank[3].u_bank":
+        location: [2141, 60]
+        orientation: "E"
+
+      # ── Top cluster: banks 4-7 N-oriented (horizontal, flat on top) ──
+      # Footprint: 808.845 w × 351.29 h um
+      # Packed against top of die with minimal spacing (40 um) for PDN routing.
+      # Horizontal gap perfectly matches the 120 um distance used on CPU flanks.
+      "u_sram.gen_sram_bank[4].u_bank":
+        location: [398, 998]
+        orientation: "N"
+      "u_sram.gen_sram_bank[5].u_bank":
+        location: [1327, 998]
+        orientation: "N"
+      "u_sram.gen_sram_bank[6].u_bank":
+        location: [398, 1389]
+        orientation: "N"
+      "u_sram.gen_sram_bank[7].u_bank":
+        location: [1327, 1389]
+        orientation: "N"

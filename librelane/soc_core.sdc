@@ -9,8 +9,11 @@ set clk_port   [get_ports $clk_name]
 
 create_clock -name $clk_name -period $clk_period $clk_port
 
-# --- Clock uncertainty (conservative for sky130) ---
-set_clock_uncertainty 0.5 [get_clocks $clk_name]
+# --- Clock uncertainty (5% of period: 0.5 ns @ 100 MHz, scales with CLOCK_PERIOD) ---
+# 5% is the conventional sky130 budget covering jitter + margin. At 20 ns the
+# old fixed 0.5 ns was only 2.5%; making it period-relative keeps the margin
+# correct at 10 ns (0.5 ns) and for any future CLOCK_PERIOD change.
+set_clock_uncertainty [expr {$clk_period * 0.05}] [get_clocks $clk_name]
 
 # --- Input/Output delays (assume 25% of period for I/O timing) ---
 set io_delay [expr {$clk_period * 0.25}]

@@ -48,9 +48,9 @@ module soc_padring (
     wire jtag_tck_c, jtag_tms_c, jtag_tdi_c, jtag_tdo_c;
 
     // Macro for input pad
-    `define IN_PAD(NAME, PAD, CORE_SIG) \
-        sky130_fd_io__top_gpio_ovtv2 NAME ( \
-            .PAD(PAD), .OUT(1'b0), .OE_N(1'b1), .IN(CORE_SIG), .IN_H(), \
+    `define IN_PAD(NAME_INST, PAD_SIG, CORE_SIG) \
+        sky130_ef_io__gpiov2_pad_wrapped NAME_INST ( \
+            .PAD(PAD_SIG), .OUT(1'b0), .OE_N(1'b1), .IN(CORE_SIG), .IN_H(), \
             .TIE_HI_ESD(), .TIE_LO_ESD(), \
             .VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1), \
             .SLOW(1'b0), .VTRIP_SEL(1'b0), .HLD_H_N(1'b1), .HLD_OVR(1'b0), \
@@ -60,9 +60,9 @@ module soc_padring (
             .PAD_A_NOESD_H(), .PAD_A_ESD_0_H(), .PAD_A_ESD_1_H());
 
     // Macro for output pad
-    `define OUT_PAD(NAME, PAD, CORE_SIG) \
-        sky130_fd_io__top_gpio_ovtv2 NAME ( \
-            .PAD(PAD), .OUT(CORE_SIG), .OE_N(1'b0), .IN(), .IN_H(), \
+    `define OUT_PAD(NAME_INST, PAD_SIG, CORE_SIG) \
+        sky130_ef_io__gpiov2_pad_wrapped NAME_INST ( \
+            .PAD(PAD_SIG), .OUT(CORE_SIG), .OE_N(1'b0), .IN(), .IN_H(), \
             .TIE_HI_ESD(), .TIE_LO_ESD(), \
             .VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1), \
             .SLOW(1'b0), .VTRIP_SEL(1'b0), .HLD_H_N(1'b1), .HLD_OVR(1'b0), \
@@ -90,7 +90,7 @@ module soc_padring (
             `OUT_PAD(u_pad_spi_cs, pad_spi_cs_n[gi], spi_cs_n_c[gi])
         end
         for (gi = 0; gi < 32; gi++) begin : gen_gpio_pad
-            sky130_fd_io__top_gpio_ovtv2 u_pad_gpio (
+            sky130_ef_io__gpiov2_pad_wrapped u_pad_gpio (
                 .PAD(pad_gpio[gi]), .OUT(gpio_out_c[gi]),
                 .OE_N(~gpio_oe_c[gi]), .IN(gpio_in_c[gi]), .IN_H(),
                 .TIE_HI_ESD(), .TIE_LO_ESD(),
@@ -125,5 +125,21 @@ module soc_padring (
         .jtag_tdi_i(jtag_tdi_c), .jtag_tdo_o(jtag_tdo_c),
         .trap_o(trap_c)
     );
+
+    // ── Power and Corner Pads ───────────────────────────────────
+    (* keep *) sky130_ef_io__corner_pad u_corner_sw ();
+    (* keep *) sky130_ef_io__corner_pad u_corner_se ();
+    (* keep *) sky130_ef_io__corner_pad u_corner_nw ();
+    (* keep *) sky130_ef_io__corner_pad u_corner_ne ();
+
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+
+    (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
 
 endmodule

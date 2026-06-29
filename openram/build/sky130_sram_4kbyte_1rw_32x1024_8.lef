@@ -613,8 +613,6 @@ MACRO sky130_sram_4kbyte_1rw_32x1024_8
          RECT  0.0 349.55 808.845 351.29 ;
          LAYER met4 ;
          RECT  0.0 0.0 1.74 351.29 ;
-         LAYER met3 ;
-         RECT  0.0 0.0 808.845 1.74 ;
          LAYER met4 ;
          RECT  807.105 0.0 808.845 351.29 ;
       END
@@ -630,8 +628,6 @@ MACRO sky130_sram_4kbyte_1rw_32x1024_8
          RECT  3.48 346.07 805.365 347.81 ;
          LAYER met4 ;
          RECT  803.625 3.48 805.365 347.81 ;
-         LAYER met3 ;
-         RECT  3.48 3.48 805.365 5.22 ;
       END
    END vssd1
    OBS

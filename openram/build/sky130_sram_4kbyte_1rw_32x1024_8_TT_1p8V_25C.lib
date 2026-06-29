@@ -67,8 +67,8 @@ library (sky130_sram_4kbyte_1rw_32x1024_8) {
   type (bus_data) {
     base_type : array;
     data_type : bit;
-    bit_width : 32;
-    bit_from  : 31;
+    bit_width : 33;
+    bit_from  : 32;
     bit_to    : 0;
   }
 

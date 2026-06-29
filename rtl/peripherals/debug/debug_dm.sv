@@ -128,6 +128,10 @@ module debug_dm (
     logic        sbautoincrement;
     logic        sbreadondata;
     logic        sbbusyerror;
+    logic        sbbusyerror_next;
+    logic [2:0]  sberror_next;
+    logic [31:0] sbaddress0_next;
+    logic [31:0] sbdata0_next;
     logic [2:0]  sberror;
     logic [2:0]  sbaccess_size;
     logic [31:0] sbaddress0;
@@ -200,6 +204,11 @@ module debug_dm (
             sbaddress0     <= 32'h0;
             sbdata0        <= 32'h0;
         end else begin
+            sbbusyerror_next = sbbusyerror;
+            sberror_next     = sberror;
+            sbaddress0_next  = sbaddress0;
+            sbdata0_next     = sbdata0;
+
             // Clear one-shot resume when observed
             if (dbg_resume_req)
                 resumereq <= 1'b0;
@@ -254,7 +263,7 @@ module debug_dm (
                         // Byte 1 (bits 15:8): sbreadondata[15], sberror[14:12]
                         if (bus_wstrb[1]) begin
                             sbreadondata <= bus_wdata[15];
-                            if (bus_wdata[14:12] != 3'b000) sberror <= 3'b000;
+                            if (bus_wdata[14:12] != 3'b000) sberror_next = 3'b000;
                         end
                         // Byte 2 (bits 23:16): sbreadonaddr[20], sbaccess[19:17], sbautoincrement[16]
                         if (bus_wstrb[2]) begin
@@ -264,21 +273,21 @@ module debug_dm (
                         end
                         // Byte 3 (bits 31:24): sbbusyerror[22] W1C — note: bit 22 is in byte 2
                         // Actually bit 22 is in byte 2 as well, handle it there:
-                        if (bus_wstrb[2] && bus_wdata[22]) sbbusyerror <= 1'b0;
+                        if (bus_wstrb[2] && bus_wdata[22]) sbbusyerror_next = 1'b0;
                         // Bit 29 (sbbusyerror W1C alternate) is in byte 3
-                        if (bus_wstrb[3] && bus_wdata[29]) sbbusyerror <= 1'b0;
+                        if (bus_wstrb[3] && bus_wdata[29]) sbbusyerror_next = 1'b0;
                     end
                     DM_SBADDRESS0: begin
-                        if (bus_wstrb[0]) sbaddress0[7:0]   <= bus_wdata[7:0];
-                        if (bus_wstrb[1]) sbaddress0[15:8]  <= bus_wdata[15:8];
-                        if (bus_wstrb[2]) sbaddress0[23:16] <= bus_wdata[23:16];
-                        if (bus_wstrb[3]) sbaddress0[31:24] <= bus_wdata[31:24];
+                        if (bus_wstrb[0]) sbaddress0_next[7:0]   = bus_wdata[7:0];
+                        if (bus_wstrb[1]) sbaddress0_next[15:8]  = bus_wdata[15:8];
+                        if (bus_wstrb[2]) sbaddress0_next[23:16] = bus_wdata[23:16];
+                        if (bus_wstrb[3]) sbaddress0_next[31:24] = bus_wdata[31:24];
                     end
                     DM_SBDATA0: begin
-                        if (bus_wstrb[0]) sbdata0[7:0]   <= bus_wdata[7:0];
-                        if (bus_wstrb[1]) sbdata0[15:8]  <= bus_wdata[15:8];
-                        if (bus_wstrb[2]) sbdata0[23:16] <= bus_wdata[23:16];
-                        if (bus_wstrb[3]) sbdata0[31:24] <= bus_wdata[31:24];
+                        if (bus_wstrb[0]) sbdata0_next[7:0]   = bus_wdata[7:0];
+                        if (bus_wstrb[1]) sbdata0_next[15:8]  = bus_wdata[15:8];
+                        if (bus_wstrb[2]) sbdata0_next[23:16] = bus_wdata[23:16];
+                        if (bus_wstrb[3]) sbdata0_next[31:24] = bus_wdata[31:24];
                     end
                     default: ;
                 endcase
@@ -330,33 +339,39 @@ module debug_dm (
             // SBA state machine updates
             if (sba_state != SBA_IDLE) begin
                 if (sba_start_read || sba_start_write)
-                    sbbusyerror <= 1'b1;
+                    sbbusyerror_next = 1'b1;
             end
             if (sba_state == SBA_W_RESP && dbg_axi_bvalid) begin
-                if (dbg_axi_bresp != 2'b00) sberror <= 3'b010;
+                if (dbg_axi_bresp != 2'b00) sberror_next = 3'b010;
                 if (sbautoincrement)
-                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
+                    sbaddress0_next = sbaddress0_next + ((sbaccess_size == 3'b000) ? 32'd1 :
                                                 (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
             end
             if (sba_state == SBA_R_RESP && dbg_axi_rvalid) begin
-                if (dbg_axi_rresp != 2'b00) sberror <= 3'b010;
+                if (dbg_axi_rresp != 2'b00) sberror_next = 3'b010;
                 case (sbaccess_size)
                     3'b000: begin
                         case (sbaddress0[1:0])
-                            2'b00: sbdata0 <= {24'h0, dbg_axi_rdata[7:0]};
-                            2'b01: sbdata0 <= {24'h0, dbg_axi_rdata[15:8]};
-                            2'b10: sbdata0 <= {24'h0, dbg_axi_rdata[23:16]};
-                            default: sbdata0 <= {24'h0, dbg_axi_rdata[31:24]};
+                            2'b00: sbdata0_next = {24'h0, dbg_axi_rdata[7:0]};
+                            2'b01: sbdata0_next = {24'h0, dbg_axi_rdata[15:8]};
+                            2'b10: sbdata0_next = {24'h0, dbg_axi_rdata[23:16]};
+                            default: sbdata0_next = {24'h0, dbg_axi_rdata[31:24]};
                         endcase
                     end
-                    3'b001: sbdata0 <= sbaddress0[1] ? {16'h0, dbg_axi_rdata[31:16]}
+                    3'b001: sbdata0_next = sbaddress0[1] ? {16'h0, dbg_axi_rdata[31:16]}
                                                      : {16'h0, dbg_axi_rdata[15:0]};
-                    default: sbdata0 <= dbg_axi_rdata;
+                    default: sbdata0_next = dbg_axi_rdata;
                 endcase
                 if (sbautoincrement)
-                    sbaddress0 <= sbaddress0 + ((sbaccess_size == 3'b000) ? 32'd1 :
+                    sbaddress0_next = sbaddress0_next + ((sbaccess_size == 3'b000) ? 32'd1 :
                                                 (sbaccess_size == 3'b001) ? 32'd2 : 32'd4);
             end
+            
+            // Finalize flip-flop assignments
+            sbbusyerror <= sbbusyerror_next;
+            sberror     <= sberror_next;
+            sbaddress0  <= sbaddress0_next;
+            sbdata0     <= sbdata0_next;
         end
     end
 

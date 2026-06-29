@@ -81,6 +81,32 @@ def copy_if_exists(src, dst):
         shutil.copyfile(src, dst)
 
 
+def remove_bottom_met3_power_access(lef_path):
+    """Hide bottom met3 PG rails from the abstract LEF.
+
+    The OpenRAM GDS still contains a continuous power ring.  Removing these
+    LEF pin rectangles only prevents pdngen from using the same edge as the
+    met4 data pins when the macro is rotated 90 degrees.
+    """
+    replacements = {
+        "         LAYER met3 ;\n"
+        "         RECT  0.0 0.0 808.845 1.74 ;\n": "",
+        "         LAYER met3 ;\n"
+        "         RECT  3.48 3.48 805.365 5.22 ;\n": "",
+    }
+
+    with open(lef_path, "r") as lef:
+        text = lef.read()
+
+    for old, new in replacements.items():
+        if old not in text:
+            raise RuntimeError("Expected bottom met3 power pin shape not found in {}".format(lef_path))
+        text = text.replace(old, new, 1)
+
+    with open(lef_path, "w") as lef:
+        lef.write(text)
+
+
 def main():
     opts, args = openram.parse_args()
     if len(args) != 1:
@@ -120,6 +146,7 @@ def main():
         lefname = OPTS.output_path + s.name + ".lef"
         debug.print_raw("LEF: Writing to {}".format(lefname))
         sram_obj.lef_write(lefname)
+        remove_bottom_met3_power_access(lefname)
 
     lvsname = OPTS.output_path + s.name + ".lvs.sp"
     debug.print_raw("LVS: Writing to {}".format(lvsname))
