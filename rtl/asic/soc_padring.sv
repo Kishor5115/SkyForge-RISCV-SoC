@@ -132,14 +132,36 @@ module soc_padring (
     (* keep *) sky130_ef_io__corner_pad u_corner_nw ();
     (* keep *) sky130_ef_io__corner_pad u_corner_ne ();
 
+    // Core Power Pads - 8 VCCD symmetrically placed
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_e0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_e1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_w0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vccd_lvc_pad u_vccd1_w1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+
+    // Core Ground Pads - 8 VSSD symmetrically placed
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_e0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_e1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_w0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssd_lvc_pad u_vssd1_w1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
 
+    // I/O Power Pads - 4 VDDIO
     (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vddio_hvc_pad u_vddio_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+
+    // I/O Ground Pads - 4 VSSIO
     (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_s0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
     (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_s1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_n0 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
+    (* keep *) sky130_ef_io__vssio_hvc_pad u_vssio_n1 (.VCCD(vccd1), .VSSD(vssd1), .VDDIO(vccd1), .VSSIO(vssd1));
 
 endmodule
