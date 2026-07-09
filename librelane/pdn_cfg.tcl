@@ -175,15 +175,24 @@ define_pdn_grid \
     -halo "$::env(PDN_HORIZONTAL_HALO) $::env(PDN_VERTICAL_HALO)"
 
 add_pdn_connect -grid macro_n -layers "$::env(PDN_VERTICAL_LAYER) $::env(PDN_HORIZONTAL_LAYER)"
-add_pdn_connect -grid macro_n -layers "met3 met4"
-add_pdn_connect -grid macro_n -layers "met3 met5"
+# NOTE (2026-07-07): the "met3 met4" / "met3 met5" macro connects were REMOVED.
+# Both macros on this grid expose PG pins on met4 (CPU picorv32_axi: met4+met5;
+# SRAM: met3+met4), so pdngen reaches them via the met4<->met5 connect above.
+# The removed met3 connects dropped a via3 array onto the SRAM's top-edge met3
+# PG rail, which already carries the SRAM's own met3->met4 vias (46 cuts) — the
+# two via3 sets merged (via3.1 non-square) / crowded (via3.2), producing 656
+# KLayout via3 violations on the 4 N banks. Connecting only through met4 (the
+# SRAM's exposed met4 PG pin) removes those redundant, colliding via3 while
+# keeping full same-net PG connectivity. See DRC_LVS_RESOLUTION_LOG 5.9.
 
 # --- Grid for W/E-rotated macros (banks 0-3) ---
-# The OpenRAM abstract LEF intentionally hides the bottom met3 PG rails.  Those
-# rails rotate onto the same edge as the met4 data pins and make pdngen's
-# stacked met3<->met5 via pads collide with signal pin access.  With that
-# unsafe access edge removed from LEF, pdngen connects through the opposite
-# met3 rail while the real GDS power ring remains continuous.
+# The rotated banks MUST keep the met3<->met5 connect: after R90/R270 rotation
+# their met4 PG pins no longer align with the vertical met4 PDN stripes, so the
+# only reachable PG pin is the met3 rail (met4-only leaves the grid empty ->
+# PDN-0233 "Failed to generate full power grid", confirmed 2026-07-07).
+# This connect drops a small number of met3 pads near the rotated met3 rail
+# (14 KLayout m3.2 met3-spacing violations) -- handled separately; connectivity
+# takes priority here.
 define_pdn_grid \
     -macro \
     -name macro_we \

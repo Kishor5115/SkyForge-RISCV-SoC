@@ -7,16 +7,26 @@ Multi-macro hierarchical flow (sky130A):
   2.  Harden PicoRV32 core as standalone macro (Classic flow)
   3.  Post-synthesis GL simulation (optional)
   4.  Patch top-level config with hardened core + OpenRAM SRAM views
-  ── soc_core (3 stages) ──────────────────────────────────────────
-  5a. soc_core Stage A: Synthesis → DetailedRouting  (run-tag RUN_SC_A)
-  5b. soc_core Stage B: post-DRT → KLayout.Render    (run-tag RUN_SC_B)
-  5c. soc_core Stage C: LEF/SPICE/DRC/LVS/signoff    (run-tag RUN_SC_C)
+  ── soc_core (3 stages, split at DRC checkpoints) ────────────────
+  5a. soc_core Stage 1: Synthesis → DetailedRouting        (run-tag RUN_SC_1)
+  5b. soc_core Stage 2: post-DRT cleanup → Magic.DRC        (run-tag RUN_SC_2)
+  5c. soc_core Stage 3: KLayout.DRC → LVS → signoff views   (run-tag RUN_SC_3)
   ── padring (3 stages) ───────────────────────────────────────────
   6a. padring Stage A: Synthesis → DetailedRouting    (run-tag RUN_PR_A)
   6b. padring Stage B: post-DRT → KLayout.Render      (run-tag RUN_PR_B)
   6c. padring Stage C: LEF/SPICE/DRC/LVS/signoff      (run-tag RUN_PR_C)
   ─────────────────────────────────────────────────────────────────
   7.  Parse signoff metrics from the padring (final chip) run
+
+soc_core's 3-way split matches the DRC/LVS signoff workflow: Stage 1 produces
+the routed layout, Stage 2 runs cleanup through Magic DRC (the SRAM-maglef /
+tap-cell fixes in soc_core_top.yaml + gen_sram_maglef.tcl land here), and
+Stage 3 covers KLayout DRC, LVS, and final signoff views (the pdn_cfg.tcl PDN
+fixes affect Stage 1's routing, but their DRC verdict is read out at the
+Stage 2/3 boundary). Each stage resumes independently via --run-tag +
+--save-views-to, so a DRC/LVS iteration never needs to re-run synthesis or
+routing. See docs/DRC_LVS_RESOLUTION_LOG.md for the fixes landing in each
+stage's step range.
 
 Requires: Docker container 'riscv-soc' (hpretl/iic-osic-tools:chipathon26)
           with ~/eda/designs bind-mounted to /foss/designs and the
@@ -39,9 +49,9 @@ RUN_HARDEN_CORE  = False   # Step 2: harden picorv32_axi (~5-15 min)
 RUN_GLSIM        = False   # Step 3: post-synthesis GL simulation
 RUN_PATCH_TOP    = False   # Step 4: patch soc_core_top.yaml with macros
 
-RUN_SC_A         = False   # Step 5a: soc_core  synth → detailed routing
-RUN_SC_B         = False   # Step 5b: soc_core  post-DRT → streamout
-RUN_SC_C         = False   # Step 5c: soc_core  LEF/SPICE/DRC/LVS/STA views
+RUN_SC_1         = False   # Step 5a: soc_core  synth → detailed routing
+RUN_SC_2         = False   # Step 5b: soc_core  post-DRT cleanup → Magic.DRC
+RUN_SC_3         = False   # Step 5c: soc_core  KLayout.DRC → LVS → signoff views
 
 RUN_PR_A         = False   # Step 6a: padring   synth → detailed routing
 RUN_PR_B         = False   # Step 6b: padring   post-DRT → streamout
@@ -76,9 +86,20 @@ SKY130_CORNERS = [
 ]
 
 # ── LibreLane Classic flow stage split-points ─────────────────────────────
-# Stage A: first step → OpenROAD.DetailedRouting
-# Stage B: Odb.RemoveRoutingObstructions → KLayout.Render
-# Stage C: Magic.WriteLEF → Misc.ReportManufacturability  (saves final views)
+# soc_core (3 stages, split at DRC checkpoints):
+#   Stage 1: first step → OpenROAD.DetailedRouting
+#   Stage 2: Odb.RemoveRoutingObstructions → Magic.DRC
+#   Stage 3: KLayout.DRC → end (Misc.ReportManufacturability)
+# Exact LibreLane step IDs confirmed from a full soc_core run's per-step
+# config.json (see docs/DRC_LVS_RESOLUTION_LOG.md Section 5.9 context).
+SC_STEP_END_1   = 'OpenROAD.DetailedRouting'
+SC_STEP_START_2 = 'Odb.RemoveRoutingObstructions'
+SC_STEP_END_2   = 'Magic.DRC'
+SC_STEP_START_3 = 'KLayout.DRC'
+# (Stage 3 has no upper bound — it runs to the flow's last step, which also
+# saves final views via --save-views-to.)
+
+# padring (3 stages) — kept on the original A/B/C split
 STEP_END_A   = 'OpenROAD.DetailedRouting'
 STEP_START_B = 'Odb.RemoveRoutingObstructions'
 STEP_END_B   = 'KLayout.Render'
@@ -284,30 +305,30 @@ def patch_top():
 
 
 # ============================================================
-# Steps 5a-5c: soc_core chip-top (3 stages)
+# Steps 5a-5c: soc_core chip-top (3 stages, split at DRC checkpoints)
 # ============================================================
 
 _SC_YAML    = 'librelane/soc_core_top.yaml'
 _SC_SAVE    = f'{CONTAINER_WORKSPACE}/build/soc_core'
 
-def run_sc_a():
-    """Stage A: Verilator.Lint → OpenROAD.DetailedRouting  (synthesis + PnR)"""
-    print("\n=== Step 5a: soc_core — Synthesis → DetailedRouting ===")
-    _librelane_stage(_SC_YAML, 'RUN_SC_A', None,
-                     to_step=STEP_END_A, run_flag=RUN_SC_A)
+def run_sc_1():
+    """Stage 1: Verilator.Lint → OpenROAD.DetailedRouting  (synthesis + PnR)"""
+    print("\n=== Step 5a: soc_core Stage 1 — Synthesis → DetailedRouting ===")
+    _librelane_stage(_SC_YAML, 'RUN_SC_1', None,
+                     to_step=SC_STEP_END_1, run_flag=RUN_SC_1)
 
-def run_sc_b():
-    """Stage B: Odb.RemoveRoutingObstructions → KLayout.Render  (post-DRT + streamout)"""
-    print("\n=== Step 5b: soc_core — post-DRT cleanup + GDS/DEF streamout ===")
-    _librelane_stage(_SC_YAML, 'RUN_SC_A', None,
-                     from_step=STEP_START_B, to_step=STEP_END_B,
-                     run_flag=RUN_SC_B)
+def run_sc_2():
+    """Stage 2: Odb.RemoveRoutingObstructions → Magic.DRC  (post-DRT cleanup + Magic DRC)"""
+    print("\n=== Step 5b: soc_core Stage 2 — post-DRT cleanup → Magic.DRC ===")
+    _librelane_stage(_SC_YAML, 'RUN_SC_1', None,
+                     from_step=SC_STEP_START_2, to_step=SC_STEP_END_2,
+                     run_flag=RUN_SC_2)
 
-def run_sc_c():
-    """Stage C: Magic.WriteLEF → end  (DRC, LVS, STA, final views copy)"""
-    print("\n=== Step 5c: soc_core — DRC/LVS/STA/views ===")
-    _librelane_stage(_SC_YAML, 'RUN_SC_A', _SC_SAVE,
-                     from_step=STEP_START_C, run_flag=RUN_SC_C)
+def run_sc_3():
+    """Stage 3: KLayout.DRC → end  (KLayout DRC, LVS, STA, final views copy)"""
+    print("\n=== Step 5c: soc_core Stage 3 — KLayout.DRC → LVS → signoff ===")
+    _librelane_stage(_SC_YAML, 'RUN_SC_1', _SC_SAVE,
+                     from_step=SC_STEP_START_3, run_flag=RUN_SC_3)
 
 
 # ============================================================
@@ -407,10 +428,10 @@ def main():
     glsim()
     patch_top()
 
-    # soc_core: 3 resumable stages
-    run_sc_a()
-    run_sc_b()
-    run_sc_c()
+    # soc_core: 3 resumable stages, split at DRC checkpoints
+    run_sc_1()
+    run_sc_2()
+    run_sc_3()
 
     # padring: 3 resumable stages (depends on soc_core views in build/)
     run_pr_a()

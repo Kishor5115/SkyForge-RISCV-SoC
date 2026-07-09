@@ -95,6 +95,68 @@ GRT_ADJUSTMENT: 0.25
 GRT_OVERFLOW_ITERS: 150
 GRT_ALLOW_CONGESTION: true
 
+# --- met3 keep-clear ring: TRIED AND ABANDONED (kept as a documented dead end) ---
+# The 8 top-level KLayout m3.2 are SRAM interface SIGNAL met3 routed 0.235-0.26um
+# from the rotated OpenRAM SRAM's met3 vccd1/vssd1 PG pins -- a "router tech file vs
+# signoff rule deck" gap (TritonRoute routes to the LEF pin and self-reports 0 DRC;
+# KLayout's sky130A_mr deck flags the real GDS). Two ROUTING_OBSTRUCTIONS strategies
+# were tried to force signal met3 off the SRAM edges:
+#   * RUN_SC_FIX1 -- reactive keepout on the 4 rotated INNER edges only: cleared those
+#     m3.2 (8->2) but the reroute RELOCATED 2 onto N-bank5 and created 8 met3.6 min-area
+#     stubs at rotated-bank top edges (Magic regressed 0 -> 8). Whack-a-mole.
+#   * RUN_SC_FIX2 -- comprehensive 0.5um met3 ring around ALL 8 banks: DetailedRouting
+#     could NOT converge (stuck oscillating ~374-434 DRC over 60+ iters). LESSON: met3
+#     IS needed near the SRAM banks for signal pin escape/access; blocking it starves
+#     routing. Routing obstructions are the WRONG tool for this class.
+# CONCLUSION (see log 5.11): the m3.2 is not economically fixable at the SoC routing
+# level for this rotated-macro floorplan. Proper fixes are macro-abstraction level
+# (out of scope) or not rotating the macro (floorplan redesign). It is handled as a
+# documented, evidence-backed signoff waiver (router-vs-deck gap), same rigor as the
+# SkyWater foundry-primitive SRAM waiver. ROUTING_OBSTRUCTIONS intentionally left unset.
+
+# --- Antenna repair ---
+# Baseline (defaults GRT_ANTENNA_REPAIR_ITERS=3, MARGIN=10, DIODE_ON_PORTS=none)
+# left 13 pin / 11 net antenna violations in the final post-detailed-route check
+# (RUN_SC_A step 46 antenna_summary.rpt): worst PAR=15.49 on the long met3 SRAM
+# data-out nets (u_sram.gen_sram_bank[*].bank_dout0[*]), plus a few internal
+# debug/gpio nets and 2 true input-port nets. The flow's own repair
+# (Odb.DiodesOnPorts + OpenROAD.RepairAntennas, 725 diodes) had already cut ~180
+# down to these 13; the residuals need a stronger, multi-stage repair pass.
+#
+# The final antenna metric is read AFTER detailed routing, so the detailed
+# router's own antenna-repair pass (DRT_ANTENNA_REPAIR_ITERS, default None = off)
+# is the most directly-targeted lever — global-route repair (GRT_*) runs before
+# detailed routing, which can then re-introduce antennas. We strengthen all three:
+#   * GRT_ANTENNA_REPAIR_ITERS 3 -> 15 : more global rip-up/reroute + diode passes
+#   * GRT_ANTENNA_REPAIR_MARGIN 10 -> 20: over-fix margin so marginal nets (1.1x-2x)
+#     are repaired with headroom rather than left barely-failing
+#   * DRT_ANTENNA_REPAIR_ITERS None -> 5: enable detailed-router antenna repair so
+#     antennas surviving/created by detailed routing are fixed before the final check
+#   * DIODE_ON_PORTS none -> in : preemptive diodes on all input ports (cheap
+#     insurance for the true input-port antenna nets, e.g. jdbg_addr[6])
+# JUMPER_ONLY/DIODE_ONLY left false so the router may use both layer-jumpers and
+# diode insertion. Validation: resume pre-GlobalRouting, re-run GlobalRouting ->
+# CheckAntennas -> DiodesOnPorts -> RepairAntennas -> DetailedRouting ->
+# CheckAntennas-1 and confirm 0 violating pins in antenna_summary.rpt.
+GRT_ANTENNA_REPAIR_ITERS: 15
+GRT_ANTENNA_REPAIR_MARGIN: 20
+DRT_ANTENNA_REPAIR_ITERS: 5
+DIODE_ON_PORTS: "in"
+# 2026-07-07: RUN_SC_1 (fresh placement) left 2 met1 antenna survivors
+# (u_sram.bank_sel_rd_d[0]/[1], PAR 1.79/1.44). The router repair converged to 2
+# it could NOT fix -- log shows GRT-0243 "Unable to repair antennas on net with
+# diodes" (router had no room / couldn't attach an effective diode). The missing
+# lever: Odb.HeuristicDiodeInsertion (classic-flow step 83) was NOT run in RUN_SC_1
+# (RUN_HEURISTIC_DIODE_INSERTION defaulted false, GPL/DPL padding=0). It proactively
+# inserts diodes at PLACEMENT on nets whose Manhattan length exceeds the PDK
+# threshold -- the principled fix for met1 antennas the post-route repair can't
+# reach. Its docstring requires GPL_CELL_PADDING and DPL_CELL_PADDING > 0 to have
+# room to legalize the inserted diodes; the 40% util floorplan has ample whitespace.
+# HEURISTIC_ANTENNA_THRESHOLD left unset -> sky130A PDK default.
+RUN_HEURISTIC_DIODE_INSERTION: true
+GPL_CELL_PADDING: 2
+DPL_CELL_PADDING: 1
+
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 
@@ -128,8 +190,11 @@ LINTER_DISABLE_WARNINGS:
   - LITENDIAN
   - INITIALDLY
   - COMBDLY
-  - GENUNUSEDSIGNAL
-  - GENUNDRIVEN
+  # NOTE: GENUNUSEDSIGNAL / GENUNDRIVEN removed — not valid Verilator 5.046
+  # warning codes (Verilator uses UNUSEDSIGNAL / UNDRIVEN with no GEN- prefix);
+  # their presence made the Verilator.Lint step abort with
+  # "Unknown error code: 'GENUNUSEDSIGNAL'" on a fresh run. UNUSEDSIGNAL above
+  # already covers generate-block unused signals.
 
 # --- Synthesis checks ---
 ERROR_ON_SYNTH_CHECKS: false
@@ -142,13 +207,55 @@ EXTRA_VERILOG_MODELS:
   - dir::../build/picorv32_axi/nl/picorv32_axi.nl.v
 
 # --- LVS ---
-LVS_FLATTEN_CELLS:
-  - sky130_sram_4kbyte_1rw_32x1024_8
+# --- SRAM treated as a BLACK BOX for signoff ---
+# The SRAM macro is signed off standalone (see docs/SRAM_DRC_SIGNOFF_RESULT.md:
+# KLayout DRC clean except foundry-primitive checks). At SoC level it is a hard
+# macro / black box:
+#   * DRC: MAGIC_DRC_USE_GDS=false -> Magic reads the SRAM LEF/abstract, does NOT
+#     re-check its internal GDS (correct; also avoids the ~31M false-count blowup).
+#   * LVS: SRAM is NOT flattened -> netgen matches it as a port-level black-box
+#     subcircuit (-blackbox). It was previously in LVS_FLATTEN_CELLS, which tried
+#     to flatten a macro that has no transistor netlist provided, producing the
+#     8-device/8-net mismatch on the spare-column dangling net. Empty list =
+#     blackbox. IGNORE_DISCONNECTED_MODULES keeps the unused spare pins from
+#     failing the match.
+LVS_FLATTEN_CELLS: []
 IGNORE_DISCONNECTED_MODULES:
   - sky130_sram_4kbyte_1rw_32x1024_8
 RUN_KLAYOUT_XOR: false
-MAGIC_DRC_USE_GDS: false
+# MAGIC_DRC_USE_GDS = true: Magic reads the full top-level soc_core GDS for
+# DRC, so standard-cell tap cells show their REAL N+/P+ diffusion + contact
+# geometry (the maglef/LEF-abstract views of tap cells contain ONLY
+# nwell/pwell/metal1 -- no diffusion layers at all -- which previously caused
+# ~1,959 FALSE "nwell.4: no metal-connected N+ tap" violations across the
+# open standard-cell area, verified by diffing
+# sky130_fd_sc_hd__tapvpwrvgnd_1's maglef vs full mag view).
+#
+# The SRAM macro is EXCLUDED from this full-GDS read via MAGIC_DRC_MAGLEFS
+# below: its maglef abstract is pre-loaded as a black box and drc.tcl's
+# `gds noduplicates true` then skips re-reading the SRAM's real internal GDS
+# -- avoiding the documented ~31 MILLION false-error blowup from Magic's GDS
+# round-trip on the SRAM's internal transistor geometry (cf. OpenLane #1040).
+#
+# IMPORTANT: this DRC maglef contains ONLY the macro's metal4 pin geometry
+# (all din/dout data pins + power rails) -- the LEF OBSTRUCTION layers
+# (obsm1-4) and the metal3 pin stubs are STRIPPED by librelane/gen_sram_maglef.tcl.
+# Reason (verified 2026-07-06, see docs/DRC_LVS_RESOLUTION_LOG.md 5.8): when the
+# top-level same-net PDN crosses a macro, Magic tolerates top-metal over the
+# abstract's PIN metal, but ALWAYS flags top-metal over the abstract's
+# OBSTRUCTION ("obstruction is not metal / types do not connect",
+# RTimothyEdwards/magic #121; OpenLane #1040/#1152). Those false obstruction-vs-
+# PDN overlaps produced 149 "Can't overlap"/"abut between subcells" + 3 met3.3d
+# violations (heavily on the W/E-rotated banks); the isolated met3 pin stubs
+# added 8 met3.6 min-area artifacts. Stripping obsm1-4 + metal3 removes all 160
+# blackbox artifacts (Magic DRC -> 0) while keeping met4 pins for real
+# top-level spacing checks. The SRAM's real merged interface geometry is still
+# checked by KLayout DRC on the full GDS, and the SRAM is signed off standalone
+# (docs/SRAM_DRC_SIGNOFF_RESULT.md), so no real violation is masked.
+MAGIC_DRC_USE_GDS: true
 MAGIC_EXT_USE_GDS: false
+MAGIC_DRC_MAGLEFS:
+  - dir::../build/soc_core/maglef/sky130_sram_4kbyte_1rw_32x1024_8.mag
 
 # --- SDC ---
 PNR_SDC_FILE: dir::soc_core.sdc

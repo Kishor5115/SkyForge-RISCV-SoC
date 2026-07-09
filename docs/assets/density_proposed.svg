@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-40 -60 2040 1940" width="760"><rect x="-40" y="-60" width="2040" height="1940" fill="#ffffff"/><text x="980.0" y="-20" font-size="34" text-anchor="middle" font-family="sans-serif" font-weight="bold">PROPOSED stdcell density — logic hugs the SRAM bus hub</text>
+<rect x="0.0" y="0.0" width="1960.0" height="1820.0" fill="#ffffff" fill-opacity="1.0" stroke="#000" stroke-width="4"/>
+<rect x="40.0" y="1428.7" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="444.4" y="1604.4" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM0</text>
+<rect x="868.8" y="1428.7" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="1273.3" y="1604.4" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM1</text>
+<rect x="40.0" y="1057.4" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="444.4" y="1233.1" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM2</text>
+<rect x="868.8" y="1057.4" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="1273.3" y="1233.1" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM3</text>
+<rect x="40.0" y="306.1" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="444.4" y="481.8" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM4</text>
+<rect x="868.8" y="306.1" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="1273.3" y="481.8" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM5</text>
+<rect x="40.0" y="-65.2" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="444.4" y="110.5" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM6</text>
+<rect x="868.8" y="-65.2" width="808.8" height="351.3" fill="#eef4fb" fill-opacity="1.0" stroke="#9db8d6" stroke-width="4"/><text x="1273.3" y="110.5" font-size="18" text-anchor="middle" fill="#111" font-family="sans-serif" font-weight="bold">SRAM7</text>
+<ellipse cx="980" cy="857" rx="950" ry="475" fill="#fff3b0" fill-opacity="0.35"/>
+<ellipse cx="980" cy="857" rx="700" ry="350" fill="#ffd166" fill-opacity="0.5"/>
+<ellipse cx="980" cy="857" rx="460" ry="230" fill="#f4a259" fill-opacity="0.7"/>
+<ellipse cx="980" cy="857" rx="250" ry="125" fill="#e76f51" fill-opacity="0.9"/>
+<text x="980.0" y="857.42" font-size="26" text-anchor="middle" font-family="sans-serif" font-weight="bold">HIGH density</text>
+<text x="980.0" y="887.42" font-size="20" text-anchor="middle" font-family="sans-serif">sram_axi / decode / rdata-mux at bus hub</text>
+<text x="120" y="80" font-size="20" fill="#555" font-family="sans-serif">low density (few buffers) toward die edges</text>
+</svg>

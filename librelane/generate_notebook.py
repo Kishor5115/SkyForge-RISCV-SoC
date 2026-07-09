@@ -22,9 +22,9 @@ RUN_HARDEN_CORE  = True    # Step 2: harden picorv32_axi  (~5-15 min)
 RUN_GLSIM        = True    # Step 3: GL simulation (optional)
 RUN_PATCH_TOP    = True    # Step 4: patch soc_core_top.yaml
 
-RUN_SC_A         = True    # Step 5a: soc_core  synth → detailed routing
-RUN_SC_B         = True    # Step 5b: soc_core  post-DRT → streamout
-RUN_SC_C         = True    # Step 5c: soc_core  DRC/LVS/STA + views copy
+RUN_SC_1         = True    # Step 5a: soc_core  synth → detailed routing
+RUN_SC_2         = True    # Step 5b: soc_core  post-DRT cleanup → Magic.DRC
+RUN_SC_3         = True    # Step 5c: soc_core  KLayout.DRC → LVS → signoff views
 
 RUN_PR_A         = True    # Step 6a: padring   synth → detailed routing
 RUN_PR_B         = True    # Step 6b: padring   post-DRT → streamout
@@ -51,6 +51,13 @@ SKY130_CORNERS = [
 ]
 
 # ── Stage split-points (LibreLane step IDs) ───────────────────────────────
+# soc_core: 3 stages split at DRC checkpoints
+SC_STEP_END_1   = 'OpenROAD.DetailedRouting'
+SC_STEP_START_2 = 'Odb.RemoveRoutingObstructions'
+SC_STEP_END_2   = 'Magic.DRC'
+SC_STEP_START_3 = 'KLayout.DRC'
+
+# padring: original A/B/C split
 STEP_END_A   = 'OpenROAD.DetailedRouting'
 STEP_START_B = 'Odb.RemoveRoutingObstructions'
 STEP_END_B   = 'KLayout.Render'
@@ -191,26 +198,32 @@ else:
     print('(dry-run) would inject picorv32_axi + SRAM paths (placement kept from yaml)')
 '''
 
-SC_A = '''\
-# soc_core Stage A: Verilator.Lint → OpenROAD.DetailedRouting
-# Run-tag: RUN_SC_A  |  resume here if Stage B/C failed
-_stage('librelane/soc_core_top.yaml', 'RUN_SC_A', None,
-       to_step=STEP_END_A, run_flag=RUN_SC_A)
+SC_1 = '''\
+# soc_core Stage 1: Verilator.Lint → OpenROAD.DetailedRouting
+# Run-tag: RUN_SC_1  |  resume here if Stage 1 failed (synthesis/PnR issue)
+_stage('librelane/soc_core_top.yaml', 'RUN_SC_1', None,
+       to_step=SC_STEP_END_1, run_flag=RUN_SC_1)
 '''
 
-SC_B = '''\
-# soc_core Stage B: Odb.RemoveRoutingObstructions → KLayout.Render
-# Run-tag: RUN_SC_A  |  resumes seamlessly from RUN_SC_A Stage A
-_stage('librelane/soc_core_top.yaml', 'RUN_SC_A', None,
-       from_step=STEP_START_B, to_step=STEP_END_B, run_flag=RUN_SC_B)
+SC_2 = '''\
+# soc_core Stage 2: Odb.RemoveRoutingObstructions → Magic.DRC
+# Run-tag: RUN_SC_1  |  resumes seamlessly from RUN_SC_1 Stage 1
+# Covers post-DRT cleanup, antenna checks, fill, RCX, STA, GDS streamout
+# (Magic + KLayout), and Magic DRC. The SRAM-maglef / tap-cell DRC fixes
+# (gen_sram_maglef.tcl, soc_core_top.yaml) are read out at the end of this stage.
+_stage('librelane/soc_core_top.yaml', 'RUN_SC_1', None,
+       from_step=SC_STEP_START_2, to_step=SC_STEP_END_2, run_flag=RUN_SC_2)
 '''
 
-SC_C = '''\
-# soc_core Stage C: Magic.WriteLEF → end  (DRC / LVS / STA / views copy)
-# Run-tag: RUN_SC_A  |  saves final views to build/soc_core/
+SC_3 = '''\
+# soc_core Stage 3: KLayout.DRC → end  (KLayout DRC / LVS / STA / views copy)
+# Run-tag: RUN_SC_1  |  saves final views to build/soc_core/
+# Covers KLayout DRC, SPICE extraction, Netgen LVS, timing-violation
+# checkers, and the manufacturability report. The pdn_cfg.tcl PDN fix's
+# KLayout verdict is read out here.
 _SC_SAVE = f'{CONTAINER_WORKSPACE}/build/soc_core'
-_stage('librelane/soc_core_top.yaml', 'RUN_SC_A', _SC_SAVE,
-       from_step=STEP_START_C, run_flag=RUN_SC_C)
+_stage('librelane/soc_core_top.yaml', 'RUN_SC_1', _SC_SAVE,
+       from_step=SC_STEP_START_3, run_flag=RUN_SC_3)
 '''
 
 PR_A = '''\
@@ -280,7 +293,7 @@ End-to-end **multi-macro hierarchical** flow inside `hpretl/iic-osic-tools:chipa
 |---|---|
 | Core macro | PicoRV32 (RV32IM) hardened standalone |
 | SRAM | 8× OpenRAM 4 KB banks, 2×4 array at die top |
-| soc_core | 3 resumable stages (A/B/C) — run-tags RUN_SC_A/B/C |
+| soc_core | 3 resumable stages (split at DRC checkpoints) — run-tags RUN_SC_1/2/3 |
 | padring | 3 resumable stages (A/B/C) — run-tags RUN_PR_A/B/C |
 
 Flip the `RUN_*` flags one at a time. If a stage gets stuck, fix the issue
@@ -325,33 +338,36 @@ Injects two macro entries into the YAML:
 schema (dict entries are rejected). Power nets: `vccd1`/`vssd1`.""", STEP4),
 
     # ── soc_core heading ─────────────────────────────────────────────────
-    ("""## soc_core flow — 3 resumable stages
+    ("""## soc_core flow — 3 resumable stages (split at DRC checkpoints)
 
-The Classic flow is split at two natural checkpoints:
+The Classic flow is split at the two DRC checkpoints so a DRC/LVS iteration
+never has to re-run synthesis or routing:
 
 | Stage | Steps | Run-tag | When to run |
 |---|---|---|---|
-| **A** | Lint → `OpenROAD.DetailedRouting` | `RUN_SC_A` | First run, or if placement/routing failed |
-| **B** | `Odb.RemoveRoutingObstructions` → `KLayout.Render` | `RUN_SC_B` | After Stage A succeeds |
-| **C** | `Magic.WriteLEF` → end (DRC/LVS/STA + views copy) | `RUN_SC_C` | After Stage B succeeds |
+| **1** | Lint → `OpenROAD.DetailedRouting` | `RUN_SC_1` | First run, or if synthesis/placement/routing failed |
+| **2** | `Odb.RemoveRoutingObstructions` → `Magic.DRC` | `RUN_SC_2` | After Stage 1 succeeds — post-DRT cleanup, streamout, Magic DRC |
+| **3** | `KLayout.DRC` → end (LVS/STA/signoff + views copy) | `RUN_SC_3` | After Stage 2 succeeds — KLayout DRC, LVS, final views |
 
-If a stage gets stuck, fix the issue, flip only that stage's flag and re-run this cell.""", None),
+If a stage gets stuck, fix the issue, flip only that stage's flag and re-run this cell.
+See `docs/DRC_LVS_RESOLUTION_LOG.md` for which fixes land in which stage's step range.""", None),
 
-    # ── SC-A ─────────────────────────────────────────────────────────────
-    ("### Step 5a — soc_core: Synthesis → DetailedRouting  (`RUN_SC_A`)\n\n"
+    # ── SC-1 ─────────────────────────────────────────────────────────────
+    ("### Step 5a — soc_core Stage 1: Synthesis → DetailedRouting  (`RUN_SC_1`)\n\n"
      "Runs Verilator lint, Yosys synthesis, floorplan, PDN, global/detailed "
-     "placement, CTS, global routing, and detailed routing. ~20-60 min.", SC_A),
+     "placement, CTS, global routing, and detailed routing. ~20-60 min.", SC_1),
 
-    # ── SC-B ─────────────────────────────────────────────────────────────
-    ("### Step 5b — soc_core: post-DRT cleanup + streamout  (`RUN_SC_B`)\n\n"
+    # ── SC-2 ─────────────────────────────────────────────────────────────
+    ("### Step 5b — soc_core Stage 2: post-DRT cleanup → Magic.DRC  (`RUN_SC_2`)\n\n"
      "Removes routing obstructions, checks antennas, fills, RCX, "
-     "post-PnR STA, IR-drop, Magic + KLayout GDS streamout. ~10-20 min.", SC_B),
+     "post-PnR STA, IR-drop, Magic + KLayout GDS streamout, Magic LEF write, "
+     "and Magic DRC. ~10-20 min.", SC_2),
 
-    # ── SC-C ─────────────────────────────────────────────────────────────
-    ("### Step 5c — soc_core: DRC / LVS / STA / views copy  (`RUN_SC_C`)\n\n"
-     "Magic LEF write, KLayout XOR, Magic DRC, KLayout DRC, SPICE extraction, "
-     "Netgen LVS, timing-violation checkers, manufacturability report. "
-     "Copies final views to `build/soc_core/`. ~5-15 min.", SC_C),
+    # ── SC-3 ─────────────────────────────────────────────────────────────
+    ("### Step 5c — soc_core Stage 3: KLayout.DRC → LVS → signoff  (`RUN_SC_3`)\n\n"
+     "KLayout DRC, SPICE extraction, Netgen LVS, timing-violation checkers, "
+     "manufacturability report. Copies final views to `build/soc_core/`. "
+     "~5-15 min.", SC_3),
 
     # ── padring heading ───────────────────────────────────────────────────
     ("""## padring flow — 3 resumable stages
