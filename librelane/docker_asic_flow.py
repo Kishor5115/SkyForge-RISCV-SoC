@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-LibreLane RTL-to-GDSII automation for the PicoRV32 RISC-V SoC.  [v2 — 16 KB + I-Cache]
+LibreLane RTL-to-GDSII automation for the PicoRV32 RISC-V SoC.
+(Flash-XIP variant: code executes in place from external QSPI flash; on-chip
+SRAM holds data/heap only.)
 
-v2 changes vs docker_asic_flow.py:
-  * SRAM reduced 32 KB (8 banks) -> 16 KB (4 banks), 2x2 grid flush-to-top
-  * Die shrunk 2533x1825 / 2200x2600 -> 1800x2000 (~33% smaller)
-  * Adds the 1 KB flash-XIP I-Cache (icache_1k) + flash_xip wrapper — std cells,
-    NOT a macro (the external QSPI flash chip is OFF-die, so there is no flash
-    macro; only the CPU + 4 SRAM banks are hardened macros / blackboxes).
-  * chip-top run tag: RUN_5_V2_SOC_TOP  (picorv32 core reuses RUN_1_PICORV32)
+Memory architecture:
+  * On-chip SRAM: 8 KB = 2x OpenRAM 4 KB banks (native orientation, single row).
+  * Code/rodata: external QSPI flash (XIP), cached by a 1 KB I-Cache
+    (icache_1k) + flash_xip wrapper — std cells, NOT a macro (the flash chip is
+    OFF-die). Only the CPU + 2 SRAM banks are hardened macros / blackboxes.
+  * Die 1800 x 1400; no rotated macros -> clean macro_n-only PDN.
+  * chip-top run tags below (the picorv32 core reuses RUN_1_PICORV32).
 
 Multi-macro hierarchical flow (sky130A):
   1. Stage workspace into Docker bind-mount
@@ -34,13 +36,13 @@ import textwrap
 # ============================================================
 
 # --- Run flags (flip True one-at-a-time as you progress) ---
-RUN_STAGE_FILES    = True    # Step 1: copy project into bind-mount
-RUN_HARDEN_CORE    = True    # Step 2: harden picorv32_axi (~5-15 min) — reuse v1 if present
-RUN_GLSIM          = True    # Step 3: post-synthesis GL simulation
-RUN_PATCH_TOP      = True    # Step 4: patch soc_core_top.yaml with macros
-RUN_CHIP_TOP       = True    # Step 5: full soc_core flow up to routing (~30 min)
-RUN_GDS            = True    # Step 6: streamout to GDS and signoff (~30-60 min)
-RUN_SIGNOFF_REPORT = True    # Step 7: parse metrics.csv
+RUN_STAGE_FILES    = True    # Step 1: copy project into bind-mount (~/eda/designs/sky-forge)
+RUN_HARDEN_CORE    = True    # Step 2: harden picorv32_axi (~5-15 min) — RUN THIS FIRST
+RUN_GLSIM          = False   # Step 3: post-synthesis GL simulation (optional)
+RUN_PATCH_TOP      = False   # Step 4: patch soc_core_top.yaml with macros (enable before chip-top)
+RUN_CHIP_TOP       = False   # Step 5: soc_core flow up to GLOBAL routing (stops before detailed route)
+RUN_GDS            = False   # Step 6: DISABLED for now (post-detailed-route streamout/signoff)
+RUN_SIGNOFF_REPORT = False   # Step 7: parse metrics.csv (after signoff)
 
 # --- Container ---
 CONTAINER_NAME = 'riscv-soc'
@@ -197,9 +199,9 @@ def glsim():
 # ============================================================
 
 def patch_top():
-    print("\n=== Step 4: Patch soc_core_top.yaml with MACROS (v2: 4 banks) ===")
+    print("\n=== Step 4: Patch soc_core_top.yaml with MACROS (2 banks / 8 KB) ===")
     if not RUN_PATCH_TOP:
-        print('(dry-run) would add picorv32_axi + 4 SRAM macros to config')
+        print('(dry-run) would add picorv32_axi + 2 SRAM macros to config')
         print('(dry-run) would set PDN_MACRO_CONNECTIONS (string entries)')
         return
 
@@ -222,19 +224,19 @@ def patch_top():
         'vh':  [str(core_base / 'nl'  / 'picorv32_axi.nl.v')],
         'lib': core_lib_map,
         'instances': {
-            # Centered in the narrower 1800-wide die, below the 2x2 SRAM stack
-            'u_cpu': {'location': [530, 280], 'orientation': 'N'},
+            # Centered in the 1800-wide die, below the single 2-bank SRAM row
+            'u_cpu': {'location': [576, 300], 'orientation': 'N'},
         },
     }
 
-    # --- SRAM macros: 2x2 array FLUSH TO TOP (4 banks = 16 KB) ---
-    # Each bank is 808.845 x 351.29 um. Die is 1800 x 2000 (v2).
+    # --- SRAM macros: single row of 2 native-N banks near TOP (2 banks = 8 KB) ---
+    # Each bank is 808.845 x 351.29 um. Die is 1800 x 1400 (8 KB variant).
     #   Col 0: x = 90   -> spans 90..898.845       (20 um left margin)
-    #   Col 1: x = 980  -> spans 980..1788.845     (< 1800)
-    #   Row 1 (top):    y = 1620 -> spans 1620..1971  (~29 um top margin)
-    #   Row 0 (bottom): y = 1249 -> spans 1249..1600  (20 um inter-row gap)
-    # CPU centered below at [530, 280]; std cells (peripherals, flash_ctrl,
-    # flash_xip, icache_1k) fill the bottom zone. External flash is off-die.
+    #   Col 1: x = 980  -> spans 980..1788.845     (< 1800, ~11 um right margin)
+    #   Row (top):       y = 1020 -> spans 1020..1371  (~29 um top margin)
+    # CPU centered below at [576, 300]; std cells (peripherals, flash_ctrl,
+    # flash_xip, icache_1k) fill the bottom zone. External QSPI flash is off-die.
+    # No rotated banks -> clean macro_n-only PDN, no rotated-macro m3.2 DRC.
     sram_base = Path(CONTAINER_WORKSPACE) / 'openram' / 'build'
     sram_lib_map = {
         corner: [str(sram_base / f'{SRAM_NAME}_TT_1p8V_25C.lib')]
@@ -246,10 +248,8 @@ def patch_top():
         'vh':  [str(sram_base / f'{SRAM_NAME}.v')],
         'lib': sram_lib_map,
         'instances': {
-            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1249], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1249], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[2].u_bank': {'location': [90,  1620], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[3].u_bank': {'location': [980, 1620], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1020], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1020], 'orientation': 'N'},
         },
     }
 
@@ -265,16 +265,16 @@ def patch_top():
     cfg['VDD_NETS'] = ['vccd1']
     cfg['GND_NETS'] = ['vssd1']
 
-    # v2 floorplan / routing knobs (fewer macros -> denser, less congestion)
-    cfg['DIE_AREA']             = [0, 0, 1800, 2000]
-    cfg['PL_TARGET_DENSITY_PCT'] = 60   # was 55
-    cfg['GRT_ADJUSTMENT']        = 0.25 # increased to relieve met4 congestion (met4 short @ 1168,858)
-    cfg['GRT_OVERFLOW_ITERS']    = 150  # was 200
+    # 8 KB variant floorplan / routing knobs (2 native banks -> compact, low congestion)
+    cfg['DIE_AREA']             = [0, 0, 1800, 1400]
+    cfg['PL_TARGET_DENSITY_PCT'] = 60
+    cfg['GRT_ADJUSTMENT']        = 0.25
+    cfg['GRT_OVERFLOW_ITERS']    = 150
 
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-    print(f'Patched {cfg_path}  (v2: 1800x2000, 4-bank 16KB SRAM 2x2 grid, 1KB I-Cache)')
+    print(f'Patched {cfg_path}  (1800x1400, 2-bank 8KB SRAM single row, 1KB I-Cache)')
     print(f'  + picorv32_axi  ({len(SKY130_CORNERS)} corners)')
-    print(f'  + {SRAM_NAME} x4  (TT lib mapped to all corners)')
+    print(f'  + {SRAM_NAME} x2  (TT lib mapped to all corners)')
     print(f'  + PDN_MACRO_CONNECTIONS (vccd1/vssd1)')
 
 
@@ -283,7 +283,10 @@ def patch_top():
 # ============================================================
 
 def run_chip_top():
-    print("\n=== Step 5: Run soc_core chip-top flow (up to routing) ===")
+    print("\n=== Step 5: Run soc_core chip-top flow (up to GLOBAL routing) ===")
+    # Stops at OpenROAD.GlobalRouting — i.e. BEFORE detailed routing. This shakes
+    # out synthesis/floorplan/PDN/placement/CTS/global-route warnings first,
+    # without hitting the detailed-route DRC wall. Extend --to later for signoff.
     script = textwrap.dedent(f'''
         set -e
         cd {CONTAINER_WORKSPACE}
@@ -293,7 +296,7 @@ def run_chip_top():
             --scl {STD_CELL_LIB} \\
             --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\
             --run-tag {TOP_RUN_TAG} \\
-            --to OpenROAD.IRDropReport
+            --to OpenROAD.GlobalRouting
     ''').strip()
     run_or_print(script, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
 
@@ -381,8 +384,8 @@ def signoff_report():
 
 def main():
     print("=" * 70)
-    print("  LibreLane RTL-to-GDSII Pipeline: PicoRV32 RISC-V SoC  [v2 — 16KB]")
-    print("  Target: sky130A | 50 MHz | 16KB SRAM (4 banks) + 1KB I-Cache")
+    print("  LibreLane RTL-to-GDSII Pipeline: PicoRV32 RISC-V SoC  (8 KB flash-XIP)")
+    print("  Target: sky130A | 50 MHz | 8KB SRAM (2 banks) + 1KB I-Cache")
     print("  External QSPI flash is off-die (XIP via flash_ctrl + I-Cache)")
     print("=" * 70)
 

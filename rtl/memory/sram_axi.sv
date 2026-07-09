@@ -2,14 +2,14 @@
  * SRAM AXI Wrapper — ASIC-Ready (OpenRAM / Behavioral)
  *
  * 16KB SRAM with AXI4-Lite slave interface.   (v2: was 32KB/8 banks)
- *   16KB = 4096 words × 32 bits, ADDR_WIDTH = 14
+ *   8KB = 2048 words × 32 bits, ADDR_WIDTH = 13
  *
  * Simulation : behavioral register-file model (1-cycle read latency)
  * Synthesis  : 4× sky130_sram_4kbyte_1rw_32x1024_8 OpenRAM macros = 16KB
  *              with 2-bit bank select from addr[11:10]
  */
 module sram_axi #(
-    parameter ADDR_WIDTH = 14,          // 16KB = 2^14 bytes (v2; was 15 = 32KB)
+    parameter ADDR_WIDTH = 13,          // 8KB = 2^13 bytes (v2; was 14 = 16KB)
     parameter DATA_WIDTH = 32,
     parameter SRAM_INIT_FILE = ""       // Optional hex file for simulation preload
 )(
@@ -49,10 +49,10 @@ module sram_axi #(
     assign axi_bresp = 2'b00;
     assign axi_rresp = 2'b00;
 
-    localparam WORD_AW   = ADDR_WIDTH - 2;   // 12 bits for 4096 words (v2)
+    localparam WORD_AW   = ADDR_WIDTH - 2;   // 11 bits for 2048 words (v2)
     localparam NUM_WORDS = 2 ** WORD_AW;
     localparam BANK_AW   = 10;               // 1024 words per 4KB bank
-    localparam NUM_BANKS = NUM_WORDS / (2 ** BANK_AW);  // 4 banks for 16KB (v2)
+    localparam NUM_BANKS = NUM_WORDS / (2 ** BANK_AW);  // 2 banks for 8KB (v2)
     localparam BANK_SEL_AW = WORD_AW - BANK_AW;         // bank-select width
 
     // ── SRAM port signals ───────────────────────────────────────

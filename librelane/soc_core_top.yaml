@@ -47,14 +47,14 @@ STA_CORNERS:
 
 # --- Floorplanning (professional SoC-grade) — v2 ---
 # Inspired by SiFive FE310/E-class die layouts with on-chip SRAM.
-# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; a 2x2 array (4 banks = 16 KB)
-# is placed flush to the TOP of the die. CPU is centered horizontally below the
-# SRAM array; std-cell peripherals (incl. flash_ctrl + 1 KB I-Cache) fill the
+# Each OpenRAM 4 KB bank is 808.845 x 351.29 um; TWO banks (8 KB) are placed in
+# a single row near the TOP of the die (native orientation, no rotation). CPU is
+# centered below; std-cell peripherals (incl. flash_ctrl + 1 KB I-Cache) fill the
 # bottom zone. The external QSPI flash chip is OFF-die (no flash macro here).
-# Die shrunk 2200x2600 -> 1800x2000 (~33% area reduction) now that there are
-# 4 SRAM banks instead of 8; utilization raised to 45%.
+# Die 1800x1400; utilization 45%. (MACROS/DIE_AREA are patched by
+# docker_asic_flow.py:patch_top for the exact 2-bank placement.)
 FP_SIZING: absolute
-DIE_AREA: [0, 0, 1800, 2000]
+DIE_AREA: [0, 0, 1800, 1400]
 FP_CORE_UTIL: 45
 PL_TARGET_DENSITY_PCT: 60
 
@@ -78,12 +78,31 @@ GRT_OVERFLOW_ITERS: 150
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 
-# --- Linter (suppress TIMESCALEMOD/PINMISSING from PDK blackbox stubs) ---
+# --- Linter (Verilator) — triaged for tapeout (2026-07-09) ---
+# A full `verilator --lint-only -Wall` on the elaborated design produced ONLY
+# the warning classes below; each was inspected and confirmed HARMLESS, so it is
+# suppressed. NO tapeout-harmful class is present or suppressed — WIDTHTRUNC
+# (silent truncation), LATCH (inferred latch), MULTIDRIVEN, IMPLICIT and
+# BLKANDNBLK are intentionally left ENABLED so the flow fails if one is ever
+# introduced.
+#   BLACKBOX stubs (picorv32_axi netlist, sky130 SRAM): UNDRIVEN/UNUSEDSIGNAL/
+#     TIMESCALEMOD/PINMISSING are expected for port-only blackbox models.
+#   UNUSEDSIGNAL/UNUSEDPARAM : unused status/debug taps and generic params.
+#   PINCONNECTEMPTY          : intentionally-unconnected macro/peripheral outputs
+#                              (trace_*, gpio_pue/ds, iof_*, fifo count).
+#   DECLFILENAME             : bootrom module in boot_rom.sv (name != file).
+#   WIDTHEXPAND              : icache fill_cnt(3b) == small const — no data loss.
+#   CASEINCOMPLETE           : axi_interconnect r_state case is inside always_ff
+#                              (clocked) -> no latch; unlisted 2-bit code just holds.
+#   SYNCASYNCNET (rst_ni)    : single clock domain, reset synchronized in
+#                              reset_clk.sv -> mixed sync/async use is safe.
+#   EOFNEWLINE/MODDUP/MODMISSING : cosmetic / blackbox re-decl (EOFNEWLINE also
+#                              fixed at source).
 LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "PINMISSING"]
 LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", "PINCONNECTEMPTY", "WIDTHEXPAND", "UNUSEDPARAM", "UNUSEDSIGNAL", "CASEINCOMPLETE", "SYNCASYNCNET"]
 
 # --- Synthesis checks ---
-# picorv32_axi (1 macro) + sky130_sram (4 macros) = 5 blackbox instances [v2]
+# picorv32_axi (1 macro) + sky130_sram (2 macros) = 3 blackbox instances
 # that Yosys counts as "check errors" even though they're valid hardened macros.
 # (The external QSPI flash is off-die; flash_ctrl/flash_xip/icache_1k are std cells.)
 ERROR_ON_SYNTH_CHECKS: false

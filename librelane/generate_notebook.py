@@ -16,7 +16,7 @@ Requires: pip install nbformat
 from pathlib import Path
 import nbformat as nbf
 
-OUT_PATH = Path(__file__).resolve().parent / 'soc_asic_flow_v2.ipynb'
+OUT_PATH = Path(__file__).resolve().parent / 'soc_asic_flow.ipynb'
 
 
 # ============================================================
@@ -165,7 +165,7 @@ def patch_top():
         'vh':  [str(core_base / 'nl'  / 'picorv32_axi.nl.v')],
         'lib': {c: [str(core_base / 'lib' / c / f'picorv32_axi__{c}.lib')]
                 for c in SKY130_CORNERS},
-        'instances': {'u_cpu': {'location': [530, 280], 'orientation': 'N'}},
+        'instances': {'u_cpu': {'location': [576, 300], 'orientation': 'N'}},
     }
     cfg['MACROS'][SRAM_NAME] = {
         'gds': [str(sram_base / f'{SRAM_NAME}.gds')],
@@ -185,7 +185,7 @@ def patch_top():
     cfg['GRT_ADJUSTMENT'] = 0.25  # increased from 0.20 to relieve met4 congestion
     cfg['GRT_OVERFLOW_ITERS'] = 150
     # NOTE: PDN_CFG intentionally omitted — the custom pdn_cfg.tcl was only needed
-    # for v1 rotated (E/W) SRAMs. v2 uses orientation N throughout; LibreLane's
+    # All SRAM banks use orientation N (no rotation); LibreLane's
     # default PDN handles met4-pin native SRAMs correctly without extra met3↔met4 connects.
     cfg['PDN_MACRO_CONNECTIONS'] = [
         '.*u_cpu.* vccd1 vssd1 vccd1 vssd1',
@@ -194,12 +194,12 @@ def patch_top():
     cfg['VDD_NETS'] = ['vccd1']
     cfg['GND_NETS'] = ['vssd1']
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-    print(f'Patched {cfg_path}  (v2: 1800x2000, 4-bank 16KB SRAM 2x2 grid, 1KB I-Cache)')
+    print(f'Patched {cfg_path}  (1800x1400, 2-bank 8KB SRAM single row, 1KB I-Cache)')
 
 if RUN_PATCH_TOP:
     patch_top()
 else:
-    print('(dry-run) v2: 4-bank 16KB SRAM 2x2 grid, die 1800x2000 = 3.6mm^2 (~33% smaller)')
+    print('(dry-run) 2-bank 8KB SRAM single row, die 1800x1400 = 2.5mm^2')
 '''
 
 STEP5_CODE = '''\
@@ -212,10 +212,10 @@ chip_top = textwrap.dedent(f"""
         --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\\\
         --run-tag RUN_2_SOC_TOP_PD \\\\
-        --to OpenROAD.IRDropReport
+        --to OpenROAD.GlobalRouting
 """).strip()
 
-# Stop before streamout to avoid memory overloading
+# Stop before detailed routing (shake out front-end warnings first)
 run_or_print(chip_top, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
 '''
 
@@ -272,79 +272,13 @@ else:
     print('\\nSIGNOFF:', 'VIOLATIONS PRESENT' if any_bad else 'CLEAN (all zero)')
 '''
 
-STEP7_CODE = (
-    "padring_cmd = textwrap.dedent(f\"\"\"\n"
-    "    set -e\n"
-    "    cd {CONTAINER_WORKSPACE}\n"
-    "    librelane librelane/soc_padring_top.yaml \\\\\n"
-    "        --pdk {PDK_NAME} \\\\\n"
-    "        --pdk-root {CONTAINER_PDK_ROOT} \\\\\n"
-    "        --scl {STD_CELL_LIB} \\\\\n"
-    "        --save-views-to {CONTAINER_WORKSPACE}/build/soc_padring \\\\\n"
-    "        --run-tag RUN_6_PADRING\n"
-    "\"\"\").strip()\n"
-    "\n"
-    "run_or_print(padring_cmd, RUN_PADRING, shell_on_container=True, timeout=None)\n"
-)
-
-STEP8_CODE = (
-    "import json as _json\n"
-    "drc_cmd = textwrap.dedent(f\"\"\"\n"
-    "    set -e\n"
-    "    cd {CONTAINER_WORKSPACE}\n"
-    "    librelane librelane/soc_padring_top.yaml \\\\\n"
-    "        --pdk {PDK_NAME} --pdk-root {CONTAINER_PDK_ROOT} --scl {STD_CELL_LIB} \\\\\n"
-    "        --run-tag RUN_5_DRC --from Magic.DRC --to Checker.MagicDRC\n"
-    "        --with-initial-state librelane/runs/RUN_5_GDS2/03-klayout-xor/state_in.json\n"
-    "\"\"\").strip()\n"
-    "run_or_print(drc_cmd, RUN_DRC, shell_on_container=True, timeout=3600)\n"
-    "if RUN_DRC:\n"
-    "    run_dir = HOST_WORKSPACE / 'librelane' / 'runs' / 'RUN_5_DRC'\n"
-    "    magic_count = klayout_count = 'n/a'\n"
-    "    for f in sorted(run_dir.glob('*/state_out.json')):\n"
-    "        try:\n"
-    "            m = _json.loads(f.read_text()).get('metrics', {})\n"
-    "            if 'magic__drc_error__count' in m: magic_count = m['magic__drc_error__count']\n"
-    "            if 'klayout__drc_error__count' in m: klayout_count = m['klayout__drc_error__count']\n"
-    "        except: pass\n"
-    "    print(f'Magic  DRC errors : {magic_count}  (target = 0)')\n"
-    "    print(f'KLayout DRC errors: {klayout_count}  (4755 on SRAM macros = known false-positive)')\n"
-)
-
-STEP9_CODE = (
-    "import json as _json\n"
-    "lvs_cmd = textwrap.dedent(f\"\"\"\n"
-    "    set -e\n"
-    "    cd {CONTAINER_WORKSPACE}\n"
-    "    librelane librelane/soc_padring_top.yaml \\\\\n"
-    "        --pdk {PDK_NAME} --pdk-root {CONTAINER_PDK_ROOT} --scl {STD_CELL_LIB} \\\\\n"
-    "        --run-tag RUN_5_LVS --from Magic.SpiceExtraction --to Checker.LVS\n"
-    "        --with-initial-state librelane/runs/RUN_5_GDS2/03-klayout-xor/state_in.json\n"
-    "\"\"\").strip()\n"
-    "run_or_print(lvs_cmd, RUN_LVS, shell_on_container=True, timeout=3600)\n"
-    "if RUN_LVS:\n"
-    "    run_dir = HOST_WORKSPACE / 'librelane' / 'runs' / 'RUN_5_LVS'\n"
-    "    for f in sorted(run_dir.glob('*/state_out.json'), reverse=True):\n"
-    "        try:\n"
-    "            m = _json.loads(f.read_text()).get('metrics', {})\n"
-    "            if 'design__lvs_error__count' in m:\n"
-    "                print(f\"LVS errors: {m['design__lvs_error__count']}  (0 = clean)\")\n"
-    "                break\n"
-    "        except: pass\n"
-    "    for rpt in sorted(run_dir.glob('*/reports/lvs.netgen.rpt'), reverse=True):\n"
-    "        lines = rpt.read_text().splitlines()\n"
-    "        print('\\n--- LVS report tail ---'); print('\\n'.join(lines[-10:])); break\n"
-)
-
-
-
 # ============================================================
 # Notebook assembly
 # ============================================================
 
 # (markdown_text, code_text) pairs. None code => markdown-only cell.
 SECTIONS = [
-    ("""# PicoRV32 RISC-V SoC -- LibreLane RTL-to-GDSII (sky130A)  [v2 — 16KB + I-Cache]
+    ("""# PicoRV32 RISC-V SoC -- LibreLane RTL-to-GDSII (sky130A) — 8 KB flash-XIP
 
 End-to-end **multi-macro hierarchical** flow inside the
 `hpretl/iic-osic-tools:chipathon26` container, targeting the
@@ -353,10 +287,10 @@ End-to-end **multi-macro hierarchical** flow inside the
 | Stage | Detail |
 |---|---|
 | Core macro | PicoRV32 (RV32IM) hardened standalone, per-corner Liberty |
-| SRAM | 4x OpenRAM 4 KB banks = **16 KB** (`vccd1`/`vssd1`, TT_1p8V_25C), 2x2 grid |
+| SRAM | 2x OpenRAM 4 KB banks = **8 KB** (`vccd1`/`vssd1`, TT_1p8V_25C), single row |
 | I-Cache | 1 KB direct-mapped, flash XIP path only, FF-based (no extra macro) |
 | Flash | External QSPI chip — **off-die** (XIP via flash_ctrl + I-Cache) |
-| Floorplan | Die 1800×2000 µm (~33% smaller than v1), SRAM 2×2 flush-to-top |
+| Floorplan | Die 1800×1400 µm, SRAM single-row (2 banks) flush-to-top |
 | Signoff | 9 STA corners, Magic+KLayout DRC, Netgen LVS, antenna |
 
 Every long step is gated by a `RUN_*` flag (all default `False`).
@@ -367,18 +301,18 @@ Flip them on one at a time as you progress.""", None),
 
     ("## Step 0.2 -- Helpers (`run_or_print`, `ok`)\n\n"
      "`run_or_print` prints every command, then executes it inside "
-     "`docker exec gf180 bash -lc ...` only when its `RUN_*` flag is `True`.",
+     "`docker exec riscv-soc bash -lc ...` only when its `RUN_*` flag is `True`.",
      HELPER_CODE),
 
     ("## Step 0.3 -- Verify container + sky130A PDK\n\n"
-     "Confirms the `gf180` container is up and that `sky130A` is present "
+     "Confirms the `riscv-soc` container is up and that `sky130A` is present "
      "at `/foss/pdks/sky130A`.",
      STEP0_CODE),
 
     ("## Step 1 -- Stage project into the bind-mount\n\n"
      "Copies `rtl/`, `librelane/`, `openram/`, `constraints/` into "
-     "`~/eda/designs/riscv_soc/workspace` (container: "
-     "`/foss/designs/riscv_soc/workspace`). sky130A is already installed, "
+     "`~/eda/designs/sky-forge` (container: "
+     "`/foss/designs/sky-forge`). sky130A is already installed, "
      "so no PDK clone is needed.",
      STEP1_CODE),
 
@@ -397,7 +331,7 @@ Flip them on one at a time as you progress.""", None),
 Dynamically injects two macros into `soc_core_top.yaml`:
 
 - **`picorv32_axi`** -- per-corner Liberty (9 sky130A corners).
-- **SRAM** -- single TT lib mapped to all corners; placed as a 2x2 array
+- **SRAM** -- single TT lib mapped to all corners; placed as a single row (2 banks)
   at the top of the die.
 
 `PDN_MACRO_CONNECTIONS` is written as a **list of strings**
@@ -405,15 +339,15 @@ Dynamically injects two macros into `soc_core_top.yaml`:
 LibreLane v3 schema -- dict-shaped entries are rejected. Power nets are
 `vccd1`/`vssd1` to match the OpenRAM SRAM pins.
 
-**v2 changes:** die area reduced from 2533×1825 to **1800×2000 µm**; SRAM
-reduced from 8→4 banks (32 KB→16 KB); CPU relocated to `[530, 280]` to centre
-it under the new die width. The external QSPI flash is off-die, so there is no
-flash macro — only the CPU and 4 SRAM banks are hardened macros.""",
+**Memory:** die 1800×1400 µm; on-chip SRAM is 2 banks (8 KB) in a single row;
+CPU at `[576, 300]` centred under the SRAM row. Code executes in place from an
+external QSPI flash (off-die), so there is no flash macro — only the CPU and
+2 SRAM banks are hardened macros.""",
      STEP4_CODE),
 
-    ("## Step 5 -- Run the chip-top `soc_core` flow (Up to Streamout)\n\n"
-     "Full synthesis -> floorplan -> PDN -> placement -> CTS -> routing -> RCX -> STA -> IRDrop. "
-     "Stops right before streamout to prevent memory overloading. Runtime ~45 min.",
+    ("## Step 5 -- Run the chip-top `soc_core` flow (up to Global Routing)\n\n"
+     "Synthesis -> floorplan -> PDN -> placement -> CTS -> global routing. "
+     "Stops BEFORE detailed routing to shake out front-end warnings first. Runtime ~30 min.",
      STEP5_CODE),
 
     ("## Step 6 -- Streamout to GDS & Signoff\n\n"
@@ -427,33 +361,18 @@ flash macro — only the CPU and 4 SRAM banks are hardened macros.""",
      "**CLEAN / VIOLATIONS PRESENT** verdict.",
      STEP6_CODE),
 
-    ("## Step 8 -- soc_padring chip-level P&R flow\n\n"
-     "Places 116 signal pads + power/gnd pads + corner cells around the "
-     "hardened **soc_core** macro (3060×4240 µm die). Runtime ~20-30 min.",
-     STEP7_CODE),
-
-    ("## Step 9 -- DRC (Magic + KLayout)\n\n"
-     "Runs Magic DRC (authoritative) and KLayout DRC on the padring GDS. "
-     "~4755 KLayout errors on SRAM macro boundaries are a known sky130 false-positive.",
-     STEP8_CODE),
-
-    ("## Step 10 -- LVS (Netgen)\n\n"
-     "Extracts SPICE from the padring layout and runs Netgen LVS. "
-     "SRAM macros are blackboxed; the key check is soc_core pin connectivity.",
-     STEP9_CODE),
-
     ("""## Where to go next
 
 - **Tune placement.** Edit the `instances` locations in Step 4 (no
   re-hardening needed) to move the core or SRAM banks.
 - **Re-characterize the SRAM.** Replace the single TT lib with a full
   OpenRAM multi-corner characterization for sharper STA.
-- **Inspect the layout.** `klayout ~/eda/designs/riscv_soc/workspace/build/soc_core/gds/soc_core.gds`
+- **Inspect the layout.** `klayout ~/eda/designs/sky-forge/build/soc_core/gds/soc_core.gds`
 
 Cleanup:
 ```bash
 rm -rf ~/eda/designs/sky-forge
-docker stop gf180
+docker stop riscv-soc
 ```""", None),
 ]
 
@@ -482,8 +401,7 @@ def main():
     print(f'Wrote {OUT_PATH}')
     print(f'  {n_md} markdown cell(s), {n_code} code cell(s)')
     print(f'  Open with: jupyter notebook {OUT_PATH}')
-    print('  NOTE: This is the v2 notebook (16KB SRAM + 1KB I-Cache, flash XIP).')
-    print('        For v1 (32KB), open soc_asic_flow.ipynb')
+    print('  NOTE: 8 KB SRAM (2 banks) + 1 KB I-Cache, external flash XIP.')
 
 
 if __name__ == '__main__':

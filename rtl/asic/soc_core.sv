@@ -367,13 +367,13 @@ module soc_core #(
     );
 
     sram_axi #(
-        .ADDR_WIDTH(14),
+        .ADDR_WIDTH(13),
         .DATA_WIDTH(32),
         .SRAM_INIT_FILE(SRAM_INIT_FILE)
     ) u_sram (
         .clk         (clk_i),
         .resetn      (rst_ni),
-        .axi_awaddr  (s1_awaddr[13:0]),
+        .axi_awaddr  (s1_awaddr[12:0]),
         .axi_awprot  (s1_awprot),
         .axi_awvalid (s1_awvalid),
         .axi_awready (s1_awready),
@@ -384,7 +384,7 @@ module soc_core #(
         .axi_bvalid  (s1_bvalid),
         .axi_bready  (s1_bready),
         .axi_bresp   (s1_bresp),
-        .axi_araddr  (s1_araddr[13:0]),
+        .axi_araddr  (s1_araddr[12:0]),
         .axi_arprot  (s1_arprot),
         .axi_arvalid (s1_arvalid),
         .axi_arready (s1_arready),

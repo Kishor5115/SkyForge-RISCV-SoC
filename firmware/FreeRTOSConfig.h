@@ -18,8 +18,8 @@
 #define configUSE_TASK_NOTIFICATIONS              1
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES     1
 
-/* ── Memory (heap_4, 12 KB of 32 KB SRAM) ────────────────────────── */
-#define configTOTAL_HEAP_SIZE                    ((size_t)(12 * 1024))
+/* ── Memory (heap_4, 5 KB of 8 KB SRAM; v2 flash-XIP data-only SRAM) ── */
+#define configTOTAL_HEAP_SIZE                    ((size_t)(5 * 1024))
 #define configSUPPORT_STATIC_ALLOCATION           0
 #define configSUPPORT_DYNAMIC_ALLOCATION          1
 #define configAPPLICATION_ALLOCATED_HEAP           0

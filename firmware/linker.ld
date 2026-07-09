@@ -3,7 +3,7 @@
  *
  * Memory Map:
  *   Flash XIP : 0x40010000 – 0x40FFFFFF  (~16 MB, code + rodata, read-only)
- *   SRAM      : 0x00010000 – 0x00013FFF  (16 KB, data + bss + heap + stack)
+ *   SRAM      : 0x00010000 – 0x00011FFF  (8 KB, data + bss + heap + stack)
  *
  * .text/.rodata execute in place from external QSPI flash (cached by the
  * 1 KB I-Cache). .data is stored in flash (LMA) and copied to SRAM (VMA) by
@@ -14,7 +14,7 @@
  *
  * PROGADDR_RESET (effective) = 0x40010000   (Boot ROM jump target)
  * PROGADDR_IRQ               = 0x40010010   (IRQ vector, fixed by HW param)
- * Stack pointer              = 0x00013FFC   (top of 16 KB SRAM, grows down)
+ * Stack pointer              = 0x00011FFC   (top of 8 KB SRAM, grows down)
  * ────────────────────────────────────────────────────────────────── */
 
 OUTPUT_FORMAT("elf32-littleriscv")
@@ -24,15 +24,15 @@ ENTRY(_start)
 FLASH_ORIGIN = 0x40010000;
 FLASH_LENGTH = 16M - 64K;          /* 0x40010000 .. 0x40FFFFFF */
 SRAM_ORIGIN  = 0x00010000;
-SRAM_LENGTH  = 16K;
+SRAM_LENGTH  = 8K;
 
 MEMORY
 {
     FLASH (rx)  : ORIGIN = 0x40010000, LENGTH = 16M - 64K
-    SRAM  (rwx) : ORIGIN = 0x00010000, LENGTH = 16K
+    SRAM  (rwx) : ORIGIN = 0x00010000, LENGTH = 8K
 }
 
-__stack_top = ORIGIN(SRAM) + LENGTH(SRAM) - 4;   /* 0x00013FFC */
+__stack_top = ORIGIN(SRAM) + LENGTH(SRAM) - 4;   /* 0x00011FFC */
 
 SECTIONS
 {
