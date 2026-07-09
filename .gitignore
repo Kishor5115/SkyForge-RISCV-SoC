@@ -85,6 +85,19 @@ openlane/designs/*/results/
 openlane/designs/*/tmp/
 openlane/designs/*/warnings.log
 
+# LibreLane repo-local run outputs (keep configs, ignore run results/build copies)
+librelane/runs/
+librelane/build/
+librelane/**/__pycache__/
+
+# Physical-verification databases / OpenROAD dumps (regenerable; keep .rpt-free)
+*.lyrdb
+*.odb
+
+# OpenRAM verification/build scratch (keep committed .lef/.lib/.v macro views)
+openram/build_verify/
+openram/build/tmp/
+
 # OpenRAM generated views — ignore heavy transient files, keep P&R views
 openram/build/*.sp
 openram/build/*.lvs

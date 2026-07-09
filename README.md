@@ -4,9 +4,14 @@
 [![RTL: SystemVerilog](https://img.shields.io/badge/RTL-SystemVerilog-blue.svg)]()
 [![ISA: RV32IM](https://img.shields.io/badge/ISA-RV32IM-green.svg)]()
 [![RTOS: FreeRTOS](https://img.shields.io/badge/RTOS-FreeRTOS-orange.svg)]()
-[![ASIC: OpenLane](https://img.shields.io/badge/ASIC-OpenLane%20%2F%20sky130-purple.svg)]()
+[![ASIC: LibreLane](https://img.shields.io/badge/ASIC-LibreLane%20%2F%20sky130A-purple.svg)]()
 
-A production-quality, fully open-source **RV32IM SoC** built around the [PicoRV32](https://github.com/YosysHQ/picorv32) core. Ships with a FreeRTOS firmware port, a UVM verification environment, JTAG/OpenOCD software debug, and a complete ASIC implementation flow targeting **SkyWater sky130**.
+A fully open-source **RV32IM SoC** built around the [PicoRV32](https://github.com/YosysHQ/picorv32) core. Ships with a FreeRTOS firmware port, a UVM verification environment, JTAG/OpenOCD software debug, and a complete RTL-to-GDSII implementation flow (LibreLane) targeting **SkyWater sky130A**.
+
+> **Branches:** `librelane` — current signoff branch, 32 KB on-chip OpenRAM SRAM
+> (8× 4 KB banks). `v2-flash-xip` — memory-optimized variant that executes code
+> in place from external QSPI flash with a small on-chip data SRAM (recommended
+> architecture; see [docs/MEMORY_ARCHITECTURE_DECISION.md](docs/MEMORY_ARCHITECTURE_DECISION.md)).
 
 ---
 
@@ -22,8 +27,8 @@ A production-quality, fully open-source **RV32IM SoC** built around the [PicoRV3
 | **Debug** | RISC-V Debug Module 0.13-style, JTAG tap, Remote-Bitbang |
 | **RTOS** | FreeRTOS 10.x with PicoRV32-specific port |
 | **Verification** | Full UVM env: APB agent, scoreboard, functional coverage, reg model |
-| **ASIC Flow** | Yosys synthesis → OpenROAD P&R → OpenLane wrapper (sky130B PDK) |
-| **SRAM Macro** | OpenRAM-generated sky130 4 KB SRAM with Liberty + LEF views |
+| **ASIC Flow** | LibreLane (Yosys synthesis → OpenROAD P&R → Magic/KLayout/Netgen signoff), sky130A PDK |
+| **SRAM Macro** | 8× OpenRAM-generated sky130 4 KB SRAM (32 KB total) with Liberty + LEF + GDS views |
 
 ---
 
@@ -133,12 +138,17 @@ riscv-soc/
 ├── openocd/
 │   ├── openocd.cfg             JTAG + Remote-Bitbang config
 │   └── gdb_init.cfg            GDB init script
-├── flow/                       Yosys + OpenSTA + OpenROAD scripts
-├── openlane/                   OpenLane design wrapper (sky130B)
-│   └── designs/soc_core_prod/  config.json, pin_order, base_sdc
+├── flow/                       Yosys + OpenSTA + OpenROAD scripts (standalone)
+├── librelane/                  LibreLane RTL-to-GDSII flow (sky130A)
+│   ├── docker_asic_flow.py     Staged soc_core flow orchestrator (Docker)
+│   ├── soc_core_top.yaml       Top-level config (macros, PDN, antenna, floorplan)
+│   ├── pdn_cfg.tcl             Power-distribution-network grid config
+│   ├── gen_sram_maglef.tcl     SRAM Magic-DRC blackbox abstract generator
+│   └── klayout_signoff_waiver.py  Report-level KLayout real-vs-waived DRC split
 ├── openram/                    OpenRAM SRAM macro generator
-│   ├── config.py
-│   └── generate_views.py
+│   ├── config.py               4 KB macro config
+│   ├── config_verify.py        DRC/LVS verification build config
+│   └── generate_views.py       View generator (GDS/LEF/LIB/V)
 ├── constraints/
 │   └── soc_core.sdc            Timing constraints (50 MHz)
 ├── docs/
@@ -248,61 +258,55 @@ Detailed instructions: [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 ## ASIC Implementation Flow
 
 > **Full implementation report → [docs/ASIC_IMPLEMENTATION.md](docs/ASIC_IMPLEMENTATION.md)**
+> **Signoff deep-dives →** [DRC research](docs/KLAYOUT_DRC_DEEP_RESEARCH.md) ·
+> [PPA & floorplan](docs/FLOORPLAN_PPA_OPTIMIZATION.md) ·
+> [DRC/LVS resolution log](docs/DRC_LVS_RESOLUTION_LOG.md)
+
+Measured on the first full end-to-end signoff run (`RUN_SC_1`, LibreLane, sky130A,
+`nom_tt_025C_1v80`):
 
 | Metric | Value |
 |---|---|
-| Process | SkyWater sky130B (130 nm) |
-| Die area | 1800 × 1350 µm (2.43 mm²) |
-| Clock | 100 MHz target — **timing closed** ✅ |
-| Setup WNS | ≥ 0 ns |
-| SRAM macros | 4 × 4 KB (2×2 array, OpenRAM-generated LEF/LIB) |
-| DRC violations | **0** ✅ |
-| LVS | SRAM blackboxed (stub GDS); logic cells clean |
-| PDN IR drop | < 40 mV estimated (< 2.8 % Vdd) |
-| Total std cells | ~6 000 |
+| Process / flow | SkyWater **sky130A** (130 nm), LibreLane |
+| Die area | 2533 × 1780 µm (**4.51 mm²**) |
+| SRAM macros | **8 × 4 KB** OpenRAM (32 KB), single-port 1RW |
+| Clock target | 100 MHz |
+| **Magic DRC** | **0** ✅ |
+| **Netgen LVS** | **clean** ✅ ("Circuits match uniquely") |
+| Detailed-route DRC | **0** ✅ |
+| **KLayout DRC** | 2067 SkyWater foundry-primitive SRAM checks (standard waiver) + 8 rotated-macro `m3.2` (documented router-vs-signoff-deck gap) — see [DRC research](docs/KLAYOUT_DRC_DEEP_RESEARCH.md) |
+| Timing | setup WNS −0.55 ns (wire-limited; root-caused + fix path in [PPA doc](docs/FLOORPLAN_PPA_OPTIMIZATION.md)) |
+| Antenna | 2 → **0** achievable (heuristic diode insertion) |
+| Std cells | ~35.9 k logic + 2.6 k FF |
+| Power | 22.1 mW @ 100 MHz (clock 44 %) |
 
-![OpenLane GDSII Layout](docs/assets/asic_gdsii_layout.png)
+![sky130 GDSII layout](docs/assets/asic_gdsii_layout.png)
 
-*SkyWater sky130 GDSII of the PicoRV32 SoC — 4 SRAM macros (top 2×2 array) + standard-cell logic (bottom).*
+*sky130A GDSII of the PicoRV32 SoC (`RUN_SC_1`): 8× 4 KB OpenRAM SRAM banks + PicoRV32 core + standard-cell logic.*
 
-### Option A — Standalone Scripted Flow (Yosys + OpenROAD)
+> **Honest signoff status:** Magic-clean, LVS-clean, route-clean. KLayout is clean
+> apart from the standard SkyWater foundry-primitive SRAM-cell waiver and 8
+> documented rotated-macro-boundary `m3.2` checks. Timing is wire-limited on this
+> spread-out 32 KB floorplan; the `v2-flash-xip` (8 KB) branch resolves the
+> underlying area/wirelength/DRC issues at the source.
+
+### Run the flow (LibreLane, Docker)
 
 ```bash
-# Prerequisites: yosys, openroad, opensta installed and on PATH
-make pd-flow
-# Outputs in flow/out/: synthesized netlist, timing reports, DEF, GDS
+# Prerequisites: Docker with the iic-osic-tools image + sky130A PDK.
+# The flow is orchestrated by librelane/docker_asic_flow.py (flip RUN_* flags).
+python3 librelane/docker_asic_flow.py
 ```
 
-See [flow/README.md](flow/README.md) for step-by-step details.
+See [docs/ASIC_IMPLEMENTATION.md](docs/ASIC_IMPLEMENTATION.md) for the staged
+soc_core flow (synthesis → routing → Magic DRC → KLayout/LVS/signoff).
 
-### Option B — OpenLane (Docker recommended)
-
-```bash
-# Prerequisites: Docker + OpenLane installed
-# See: https://github.com/The-OpenROAD-Project/OpenLane
-
-cd openlane
-make                        # runs OpenLane on designs/soc_core_prod
-# Results in: designs/soc_core_prod/runs/<timestamp>/
-```
-
-The design configuration (`config.json`) targets:
-- PDK: `sky130B`
-- Clock: `clk`, period = 20 ns (50 MHz)
-- Die area: auto-floorplan from utilization
-
-See [openlane/README.md](openlane/README.md) for full details and viewing GDSII.
-
-### Option C — Generate SRAM Macro with OpenRAM
+### Generate the SRAM Macro with OpenRAM
 
 ```bash
-# Prerequisites: OpenRAM installed, sky130 PDK available
-export OPENRAM_HOME=/path/to/openram
-export OPENRAM_TECH=sky130
-
-cd openram
-python3 generate_views.py
-# Outputs: build/sky130_sram_4kbyte_*.lef, .lib, .v
+# Prerequisites: OpenRAM installed, sky130 PDK available.
+./openram/generate_views.py openram/config.py
+# Outputs: openram/build/sky130_sram_4kbyte_*.lef, .lib, .v, .gds
 ```
 
 ---
@@ -379,6 +383,6 @@ Third-party components (PicoRV32, FreeRTOS kernel, UVM base classes) retain thei
 
 - [PicoRV32](https://github.com/YosysHQ/picorv32) by Claire Xen (YosysHQ) — the heart of this SoC
 - [FreeRTOS](https://www.freertos.org/) — RTOS kernel
-- [OpenLane](https://github.com/The-OpenROAD-Project/OpenLane) — RTL-to-GDS flow
+- [LibreLane](https://github.com/librelane/librelane) / [OpenROAD](https://theopenroadproject.org/) — RTL-to-GDSII flow
 - [OpenRAM](https://openram.org/) — Open-source SRAM compiler
 - [SkyWater sky130 PDK](https://github.com/google/skywater-pdk) — Open process design kit
