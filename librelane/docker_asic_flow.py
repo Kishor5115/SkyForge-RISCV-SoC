@@ -36,11 +36,11 @@ import textwrap
 # ============================================================
 
 # --- Run flags (flip True one-at-a-time as you progress) ---
-RUN_STAGE_FILES    = True    # Step 1: copy project into bind-mount (~/eda/designs/sky-forge)
-RUN_HARDEN_CORE    = True    # Step 2: harden picorv32_axi (~5-15 min) — RUN THIS FIRST
+RUN_STAGE_FILES    = False   # Step 1: SKIP — workspace already staged (rmtree would wipe core build)
+RUN_HARDEN_CORE    = False   # Step 2: SKIP — picorv32 core already hardened (RUN_1_PICORV32)
 RUN_GLSIM          = False   # Step 3: post-synthesis GL simulation (optional)
-RUN_PATCH_TOP      = False   # Step 4: patch soc_core_top.yaml with macros (enable before chip-top)
-RUN_CHIP_TOP       = False   # Step 5: soc_core flow up to GLOBAL routing (stops before detailed route)
+RUN_PATCH_TOP      = True    # Step 4: patch soc_core_top.yaml with macros
+RUN_CHIP_TOP       = True    # Step 5: soc_core flow up to GLOBAL routing (stops before detailed route)
 RUN_GDS            = False   # Step 6: DISABLED for now (post-detailed-route streamout/signoff)
 RUN_SIGNOFF_REPORT = False   # Step 7: parse metrics.csv (after signoff)
 

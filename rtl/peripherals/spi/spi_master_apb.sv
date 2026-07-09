@@ -143,7 +143,8 @@ module spi_master_apb #(
     logic        clk_phase;         // Toggles every half-SCLK period
     logic [4:0]  bit_cnt;           // Current bit index
     logic [31:0] shift_out;         // TX shift register
-    logic [31:0] shift_in;          // RX shift register
+    logic [31:0] shift_in;          // RX shift register (registered)
+    logic [31:0] shift_in_next;     // Combinational next-value (avoids Yosys dynamic-index warnings)
     logic        sclk_reg;
     logic        mosi_reg;
     logic        spi_busy;
@@ -365,6 +366,14 @@ module spi_master_apb #(
     // Determine current output bit based on endianness
     wire [4:0] out_bit_idx = reg_endian ? bit_cnt : (reg_framelen - 1 - bit_cnt);
 
+    // Compute next shift_in value combinationally so Yosys sees a fully
+    // driven 32-bit mux tree rather than a dynamic bit-select (which causes
+    // "Wire used but has no driver" elaboration noise for unused indices).
+    always_comb begin
+        shift_in_next = shift_in;
+        shift_in_next[out_bit_idx] = spi_miso;
+    end
+
     always_ff @(posedge clk) begin
         if (!resetn || reg_sw_rst) begin
             spi_state    <= SPI_IDLE;
@@ -430,8 +439,8 @@ module spi_master_apb #(
                             // CPHA=0: sample on leading edge, shift on trailing
                             if (!clk_phase) begin
                                 // Leading edge (sample)
-                                sclk_reg <= ~reg_cpol;
-                                shift_in[out_bit_idx] <= spi_miso;
+                                sclk_reg  <= ~reg_cpol;
+                                shift_in  <= shift_in_next;
                             end else begin
                                 // Trailing edge (shift)
                                 sclk_reg <= reg_cpol;
@@ -455,7 +464,7 @@ module spi_master_apb #(
                             end else begin
                                 // Trailing edge (sample)
                                 sclk_reg <= reg_cpol;
-                                shift_in[out_bit_idx] <= spi_miso;
+                                shift_in <= shift_in_next;
                                 if (bit_cnt == reg_framelen - 1) begin
                                     cs_hold_cnt <= 4'd2;
                                     spi_state   <= SPI_TRAILING;
