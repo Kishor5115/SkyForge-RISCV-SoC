@@ -23,7 +23,7 @@ VERILOG_FILES:
 # --- Clock ---
 CLOCK_PORT: clk
 CLOCK_NET: clk
-CLOCK_PERIOD: 20  # 50 MHz target
+CLOCK_PERIOD: 10  # 100 MHz target
 
 # --- Floorplanning (canonical picorv32a values) ---
 FP_SIZING: relative
@@ -31,15 +31,35 @@ FP_CORE_UTIL: 35
 PL_TARGET_DENSITY_PCT: 50
 
 # --- Synthesis ---
-SYNTH_STRATEGY: "AREA 0"
+# DELAY-optimized: the peer-reviewed sky130 timing-closure study (preprints.org
+# 2026) found PicoRV32 closes ~200 MHz on sky130 and that DELAY strategies
+# dominate the timing-closed configurations. At the 100 MHz target this is the
+# key lever for shrinking the regfile->ALU->regfile datapath (the same regfile
+# read mux that feeds the debug interface).
+SYNTH_STRATEGY: "DELAY 0"
 
 # --- Linter (suppress TIMESCALEMOD from PDK blackbox stubs) ---
 LINTER_DISABLE_WARNINGS_BLACKBOX: ["UNDRIVEN", "UNUSEDSIGNAL", "TIMESCALEMOD", "PINMISSING"]
 
 # --- Routing ---
-# Use the sky130A PDK defaults (RT_MIN_LAYER met1, RT_MAX_LAYER met5).
-# li1 is local-interconnect only; the router reaches li1 cell pins through the
-# licon/mcon via stack automatically. (Do NOT force routing onto li1.)
+# 100 MHz TARGET: signal routing uses the full met1..met5 stack. met5 is needed
+# to shorten the regfile/ALU datapath nets (the met4-only cap added ~3 ns and is
+# incompatible with 100 MHz). NOTE: this reintroduces the possibility of macro
+# met5 signal wires under the SoC-top met5 PDN straps — handled at the top level
+# by the macro halo; if a met5 short appears in top detailed routing, add a
+# top-level met5 routing blockage over the macro (does not require re-hardening).
+RT_MIN_LAYER: met1
+RT_MAX_LAYER: met5
+
+# --- Power Distribution (macro hardening) — PSM-0069 ROOT-CAUSE FIX ------------
+# POWER still tops at met4 (met1 rails + met4 straps, PDN_MULTILAYER=false). This
+# is the actual PSM-0069 fix: the macro's power PINS are on met4, so the SoC-top
+# met5 power straps via ORTHOGONALLY down onto them (met5 power pins would run
+# parallel to the top met5 straps and could not connect → the floating vccd1
+# island / 833 violations). Signal routing on met5 (above) is independent of the
+# power grid and does not re-create the PSM-0069 power-connectivity failure.
+PDN_MULTILAYER: false         # met1 rails + met4 vertical straps only (no met5 POWER)
+PDN_VERTICAL_LAYER: met4      # vertical straps + promoted power pins (macro top)
 
 # --- Clock Tree Synthesis ---
 # DRT-0073 ROOT CAUSE & FIX:

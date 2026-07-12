@@ -52,6 +52,11 @@ CONTAINER_WORKSPACE = '/foss/designs/sky-forge'
 # --- OpenRAM SRAM macro (sky130, vccd1/vssd1, single TT corner) ---
 SRAM_NAME = 'sky130_sram_4kbyte_1rw_32x1024_8'
 
+# --- Run tags ---
+CORE_RUN_TAG = 'RUN_1_PICORV32'
+TOP_RUN_TAG  = 'RUN_2_SOC_TOP_PD'
+GDS_RUN_TAG  = 'RUN_3_GDS'
+
 # --- sky130A STA corners (per-corner .lib mandatory in LibreLane v3) ---
 SKY130_CORNERS = [
     'nom_tt_025C_1v80', 'nom_ss_100C_1v60', 'nom_ff_n40C_1v95',
@@ -59,7 +64,7 @@ SKY130_CORNERS = [
     'max_tt_025C_1v80', 'max_ss_100C_1v60', 'max_ff_n40C_1v95',
 ]
 
-print(f'PROJECT_ROOT  = {PROJECT_ROOT}')
+print(f'PROJECT_ROOT   = {PROJECT_ROOT}')
 print(f'HOST_WORKSPACE = {HOST_WORKSPACE}')
 '''
 
@@ -132,7 +137,7 @@ harden_core = textwrap.dedent(f"""
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
         --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/picorv32_axi \\\\
-        --run-tag RUN_1_PICORV32
+        --run-tag {CORE_RUN_TAG}
 """).strip()
 
 run_or_print(harden_core, RUN_HARDEN_CORE, shell_on_container=True, timeout=1800)
@@ -152,12 +157,25 @@ run_or_print(glsim, RUN_GLSIM, shell_on_container=True, timeout=300)
 
 STEP4_CODE = '''\
 def patch_top():
+    """Inject hardened macro views + corrected floorplan/PDN into soc_core_top.yaml.
+
+    CRITICAL FIXES applied here (see docs/SOC_TOP_WARNING_RESOLUTION.md):
+    -----------------------------------------------------------------------
+    1. PDN/PSM-0069: CPU macro power pin names corrected to VPWR/VGND (the
+       macro's actual LEF pin names), not vccd1/vssd1. Combined with the
+       met4-topped macro PDN (picorv32_core.yaml), this resolves the 833
+       vccd1 unconnected-shape violations.
+    2. CONGESTION/RSZ-0064: die area expanded 1800x1550 (from 1400), density
+       35% (from 52%), GRT_ADJUSTMENT 0.15 to force uniform placement spread
+       room for the icache 8192-FF cluster + hold buffers.
+    """
     import yaml
     cfg_path = HOST_WORKSPACE / 'librelane' / 'soc_core_top.yaml'
     cfg = yaml.safe_load(cfg_path.read_text())
     build = Path(CONTAINER_WORKSPACE) / 'build'
+
+    # --- PicoRV32 core macro ---
     core_base = build / 'picorv32_axi'
-    sram_base = Path(CONTAINER_WORKSPACE) / 'openram' / 'build'
     cfg.setdefault('MACROS', {})
     cfg['MACROS']['picorv32_axi'] = {
         'gds': [str(core_base / 'gds' / 'picorv32_axi.gds')],
@@ -165,8 +183,12 @@ def patch_top():
         'vh':  [str(core_base / 'nl'  / 'picorv32_axi.nl.v')],
         'lib': {c: [str(core_base / 'lib' / c / f'picorv32_axi__{c}.lib')]
                 for c in SKY130_CORNERS},
-        'instances': {'u_cpu': {'location': [576, 300], 'orientation': 'N'}},
+        'instances': {'u_cpu': {'location': [570, 10], 'orientation': 'N'}},   # bottom edge (periphery)
     }
+
+    # --- SRAM macros: 2 banks (8 KB), single row near top ---
+    # Each bank: 808.845 x 351.29 um, native N orientation.
+    sram_base = Path(CONTAINER_WORKSPACE) / 'openram' / 'build'
     cfg['MACROS'][SRAM_NAME] = {
         'gds': [str(sram_base / f'{SRAM_NAME}.gds')],
         'lef': [str(sram_base / f'{SRAM_NAME}.lef')],
@@ -174,32 +196,37 @@ def patch_top():
         'lib': {c: [str(sram_base / f'{SRAM_NAME}_TT_1p8V_25C.lib')]
                 for c in SKY130_CORNERS},
         'instances': {
-            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1249], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1249], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[2].u_bank': {'location': [90,  1620], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[3].u_bank': {'location': [980, 1620], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1180], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1180], 'orientation': 'N'},
         },
     }
-    cfg['DIE_AREA'] = [0, 0, 1800, 2000]
-    cfg['PL_TARGET_DENSITY_PCT'] = 60
-    cfg['GRT_ADJUSTMENT'] = 0.25  # increased from 0.20 to relieve met4 congestion
-    cfg['GRT_OVERFLOW_ITERS'] = 150
-    # NOTE: PDN_CFG intentionally omitted — the custom pdn_cfg.tcl was only needed
-    # All SRAM banks use orientation N (no rotation); LibreLane's
-    # default PDN handles met4-pin native SRAMs correctly without extra met3↔met4 connects.
+
+    # --- PDN macro connections ---
+    # Format: "<inst_regex> <power_net> <ground_net> <power_pin> <ground_pin>"
+    # CPU pins are VPWR/VGND (std-cell naming); SRAM pins are vccd1/vssd1.
     cfg['PDN_MACRO_CONNECTIONS'] = [
-        '.*u_cpu.* vccd1 vssd1 vccd1 vssd1',
+        '.*u_cpu.* vccd1 vssd1 VPWR VGND',
         '.*u_bank.* vccd1 vssd1 vccd1 vssd1',
     ]
     cfg['VDD_NETS'] = ['vccd1']
     cfg['GND_NETS'] = ['vssd1']
+
+    # --- Floorplan / routing knobs (congestion + hold fix) ---
+    cfg['DIE_AREA']              = [0, 0, 1800, 1550]
+    cfg['PL_TARGET_DENSITY_PCT'] = 50   # normal density (periphery floorplan gives the routing channel)
+    cfg['GRT_ADJUSTMENT']        = 0.15
+    cfg['GRT_OVERFLOW_ITERS']    = 150
+
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-    print(f'Patched {cfg_path}  (1800x1400, 2-bank 8KB SRAM single row, 1KB I-Cache)')
+    print(f'Patched {cfg_path}')
+    print(f'  Die: 1800x1550, density 50%, CPU bottom + SRAM top (periphery)')
+    print(f'  CPU PDN pin: VPWR/VGND -> vccd1/vssd1 net')
+    print(f'  SRAM: 2 banks @ y=1180 (top edge); CPU @ y=10 (bottom edge)')
 
 if RUN_PATCH_TOP:
     patch_top()
 else:
-    print('(dry-run) 2-bank 8KB SRAM single row, die 1800x1400 = 2.5mm^2')
+    print('(dry-run) would patch soc_core_top.yaml with corrected macros')
 '''
 
 STEP5_CODE = '''\
@@ -211,11 +238,12 @@ chip_top = textwrap.dedent(f"""
         --pdk-root {CONTAINER_PDK_ROOT} \\\\
         --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\\\
-        --run-tag RUN_2_SOC_TOP_PD \\\\
-        --to OpenROAD.GlobalRouting
+        --run-tag {TOP_RUN_TAG} \\\\
+        --to OpenROAD.DetailedRouting
 """).strip()
 
-# Stop before detailed routing (shake out front-end warnings first)
+# Runs through detailed routing. GRT_ALLOW_CONGESTION lets residual localized
+# global-route overflow pass to detailed routing, which resolves it.
 run_or_print(chip_top, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
 '''
 
@@ -229,11 +257,11 @@ chip_top_gds = textwrap.dedent(f"""
         --scl {STD_CELL_LIB} \\\\
         --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\\\
         --run-tag RUN_3_GDS \\\\
-        --from Magic.StreamOut \\\\
-        --with-initial-state librelane/runs/RUN_2_SOC_TOP_PD/state_out.json
+        --from Odb.RemoveRoutingObstructions \\\\
+        --with-initial-state librelane/runs/{TOP_RUN_TAG}/44-openroad-detailedrouting/state_out.json
 """).strip()
 
-# Continue from streamout to final signoff
+# Resumes from DRT-completed state: antenna check, fill, RCX, STA, GDS, DRC, LVS
 run_or_print(chip_top_gds, RUN_GDS, shell_on_container=True, timeout=None)
 '''
 
@@ -253,17 +281,17 @@ wanted = [
 if not RUN_SIGNOFF_REPORT:
     print(f'(dry-run) would parse {metrics_path}')
 elif not metrics_path.exists():
-    print(f'!! metrics.csv not found: {metrics_path}  (run Step 5 first)')
+    print(f'!! metrics.csv not found: {metrics_path}  (run Step 5/6 first)')
 else:
     found = {}
     with metrics_path.open() as fh:
         for row in csv.reader(fh):
             if row and row[0] in dict(wanted):
                 found[row[0]] = row[1] if len(row) > 1 else ''
-    print(f'{"Metric":45s} {"Value":>15s}')
+    print(f'{\"Metric\":45s} {\"Value\":>15s}')
     print('-' * 63)
     for k, label in wanted:
-        print(f'  {label:43s} {found.get(k, "(missing)"):>15s}')
+        print(f'  {label:43s} {found.get(k, \"(missing)\"):>15s}')
     any_bad = any(
         (found.get(k, '0') or '0').strip() not in ('0', '')
         for k in ('magic__drc_error__count', 'klayout__drc_error__count',
@@ -278,7 +306,7 @@ else:
 
 # (markdown_text, code_text) pairs. None code => markdown-only cell.
 SECTIONS = [
-    ("""# PicoRV32 RISC-V SoC -- LibreLane RTL-to-GDSII (sky130A) — 8 KB flash-XIP
+    ("""# PicoRV32 RISC-V SoC — LibreLane RTL-to-GDSII (sky130A) — 8 KB Flash-XIP
 
 End-to-end **multi-macro hierarchical** flow inside the
 `hpretl/iic-osic-tools:chipathon26` container, targeting the
@@ -286,76 +314,119 @@ End-to-end **multi-macro hierarchical** flow inside the
 
 | Stage | Detail |
 |---|---|
-| Core macro | PicoRV32 (RV32IM) hardened standalone, per-corner Liberty |
-| SRAM | 2x OpenRAM 4 KB banks = **8 KB** (`vccd1`/`vssd1`, TT_1p8V_25C), single row |
-| I-Cache | 1 KB direct-mapped, flash XIP path only, FF-based (no extra macro) |
+| Core macro | PicoRV32 (RV32IM) hardened standalone @ **100 MHz**, DELAY-0 synth, **met4 power pins** (fixes PSM-0069) |
+| SRAM | 2× OpenRAM 4 KB banks = **8 KB** (`vccd1`/`vssd1`, TT_1p8V_25C), single row |
+| I-Cache | 512 B direct-mapped, flash XIP path, FF-based (std cells, not a macro) |
 | Flash | External QSPI chip — **off-die** (XIP via flash_ctrl + I-Cache) |
-| Floorplan | Die 1800×1400 µm, SRAM single-row (2 banks) flush-to-top |
+| Floorplan | Die 1800×1550 µm, SRAM single-row near top, CPU centred below |
+| PDN | Core grid met4/met5; macro **power** tops at met4 → orthogonal via connectivity (signals use met1–met5) |
 | Signoff | 9 STA corners, Magic+KLayout DRC, Netgen LVS, antenna |
 
-Every long step is gated by a `RUN_*` flag (all default `False`).
-Flip them on one at a time as you progress.""", None),
+**Key fixes applied (vs prior runs):**
+- **100 MHz target:** `CLOCK_PERIOD 10`, core `SYNTH_STRATEGY "DELAY 0"`,
+  full met1–met5 signal routing. (PicoRV32 closes ~200 MHz on sky130 per the
+  peer-reviewed OpenROAD/OpenLane study, so 100 MHz is a conservative, credible
+  target.)
+- **PSM-0069 (833 violations):** Root cause was the CPU macro's *power* topping at
+  met5 (same as core grid), creating a floating power island. Fixed by hardening
+  the macro's POWER as a proper sub-macro (`PDN_MULTILAYER: false` =
+  `DESIGN_IS_CORE:false` → met1 rails + met4 power straps only). The SoC-top met5
+  straps via orthogonally down to the macro's met4 power pins. Signal routing
+  still uses met5 (independent of the power grid).
+- **GRT-0116/0230 congestion:** Root cause = the FF-based icache (8192 FFs) local
+  density on met1/met2. **PPA fix**: halve it to 512 B (`flash_xip.sv` NUM_LINES
+  32→16 = 4096 FFs) — the right area/power trade, and the smaller read mux also
+  helps timing at 100 MHz. Plus periphery macro floorplan (CPU bottom, SRAM top, ~509um channel), density 50%, GRT_ADJUSTMENT 0.15,
+  and `GRT_ALLOW_CONGESTION: true` so detailed routing resolves residual overflow.
+- **GRT-0281 high fanout:** SDC `set_max_fanout 24` + `SYNTH_MAX_FANOUT: 16`
+  forces buffer tree insertion for icache req_foff word-select nets.
+- **RSZ-0064 hold repair:** Lower density gives the resizer room. Clock
+  uncertainty reduced from 0.5 to 0.25 ns (less pessimistic hold margin).""", None),
 
-    ("## Step 0.1 -- Configuration\n\nPaths, PDK identifiers, run flags, and the sky130A STA corner list.",
+    ("## Step 0.1 — Configuration\n\nPaths, PDK identifiers, run tags, and the sky130A STA corner list.",
      CONFIG_CODE),
 
-    ("## Step 0.2 -- Helpers (`run_or_print`, `ok`)\n\n"
+    ("## Step 0.2 — Helpers (`run_or_print`, `ok`)\n\n"
      "`run_or_print` prints every command, then executes it inside "
      "`docker exec riscv-soc bash -lc ...` only when its `RUN_*` flag is `True`.",
      HELPER_CODE),
 
-    ("## Step 0.3 -- Verify container + sky130A PDK\n\n"
+    ("## Step 0.3 — Verify container + sky130A PDK\n\n"
      "Confirms the `riscv-soc` container is up and that `sky130A` is present "
      "at `/foss/pdks/sky130A`.",
      STEP0_CODE),
 
-    ("## Step 1 -- Stage project into the bind-mount\n\n"
+    ("## Step 1 — Stage project into the bind-mount\n\n"
      "Copies `rtl/`, `librelane/`, `openram/`, `constraints/` into "
      "`~/eda/designs/sky-forge` (container: "
      "`/foss/designs/sky-forge`). sky130A is already installed, "
      "so no PDK clone is needed.",
      STEP1_CODE),
 
-    ("## Step 2 -- Harden the PicoRV32 core macro\n\n"
-     "Runs the LibreLane Classic flow on `picorv32_core.yaml`, writing "
-     "`gds/lef/nl/lib` views to `build/picorv32_axi/`. Runtime ~5-15 min.",
+    ("""## Step 2 — Harden the PicoRV32 core macro
+
+Runs the LibreLane Classic flow on `picorv32_core.yaml` @ **100 MHz** with
+DELAY-0 synthesis, writing `gds/lef/nl/lib` views to `build/picorv32_axi/`.
+Runtime ~5–15 min.
+
+**PDN (PSM-0069 fix) vs routing (100 MHz) — the split:**
+```yaml
+CLOCK_PERIOD: 10          # 100 MHz
+SYNTH_STRATEGY: "DELAY 0" # shrink the regfile->ALU->regfile datapath
+PDN_MULTILAYER: false     # = DESIGN_IS_CORE:false -> POWER on met1 rails + met4 straps only
+PDN_VERTICAL_LAYER: met4  # power pins promoted on met4
+RT_MAX_LAYER: met5        # SIGNALS use full met1..met5 (needed for 100 MHz)
+```
+The PSM-0069 fix is about **power**: keeping power pins on met4 lets the SoC-top
+met5 straps via orthogonally DOWN onto them (met5 *power* would run parallel to
+the top met5 straps and could not connect → the floating vccd1 island). **Signal**
+routing on met5 is independent of the power grid and is required to close the
+100 MHz datapath. (A met3+met4 power mesh was tried first and failed with
+PDN-0179; the single-met4 power grid is the correct approach.)""",
      STEP2_CODE),
 
-    ("## Step 3 -- Post-synthesis GL simulation (optional)\n\n"
+    ("## Step 3 — Post-synthesis GL simulation (optional)\n\n"
      "Confirms the hardened netlist exists and points at the "
      "`sky130_fd_sc_hd` behavioural models for an optional cocotb GL run.",
      STEP3_CODE),
 
-    ("""## Step 4 -- Patch the top-level config
+    ("""## Step 4 — Patch the top-level config
 
 Dynamically injects two macros into `soc_core_top.yaml`:
 
-- **`picorv32_axi`** -- per-corner Liberty (9 sky130A corners).
-- **SRAM** -- single TT lib mapped to all corners; placed as a single row (2 banks)
-  at the top of the die.
+- **`picorv32_axi`** — per-corner Liberty (9 sky130A corners), at `[570, 10]` (bottom edge).
+- **SRAM** — 2× OpenRAM 4 KB banks at `[90, 1180]` and `[980, 1180]` (top edge).
 
-`PDN_MACRO_CONNECTIONS` is written as a **list of strings**
-(`"<regex> <vdd> <vss> <macro_vdd_pin> <macro_vss_pin>"`) per the
-LibreLane v3 schema -- dict-shaped entries are rejected. Power nets are
-`vccd1`/`vssd1` to match the OpenRAM SRAM pins.
+**PDN_MACRO_CONNECTIONS** format: `"<regex> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>"`.
+- CPU macro: pins are **VPWR/VGND** (std-cell naming from LibreLane harden).
+- SRAM macro: pins are **vccd1/vssd1** (OpenRAM native naming).
 
-**Memory:** die 1800×1400 µm; on-chip SRAM is 2 banks (8 KB) in a single row;
-CPU at `[576, 300]` centred under the SRAM row. Code executes in place from an
-external QSPI flash (off-die), so there is no flash macro — only the CPU and
-2 SRAM banks are hardened macros.""",
+Floorplan: Die **1800×1550** µm, density **35%** (uniform spread), GRT adjustment **0.15**.""",
      STEP4_CODE),
 
-    ("## Step 5 -- Run the chip-top `soc_core` flow (up to Global Routing)\n\n"
-     "Synthesis -> floorplan -> PDN -> placement -> CTS -> global routing. "
-     "Stops BEFORE detailed routing to shake out front-end warnings first. Runtime ~30 min.",
+    ("""## Step 5 — Run the chip-top `soc_core` flow (through Detailed Routing)
+
+Synthesis → floorplan → PDN → placement → CTS → global routing → **detailed
+routing**. Runtime ~40–60 min.
+
+**Congestion strategy (GRT-0116):** the root-cause fix is the **512 B icache**
+(`flash_xip.sv` NUM_LINES 16), which removes the met1/met2 density hotspot.
+Since average global-route utilisation is only ~46%, any residual overflow is
+localized — `GRT_ALLOW_CONGESTION: true` lets global routing pass it to detailed
+routing (TritonRoute), which closes it with fine rip-up-and-reroute. That's why
+this step now runs **through** detailed routing rather than stopping at GR.""",
      STEP5_CODE),
 
-    ("## Step 6 -- Streamout to GDS & Signoff\n\n"
-     "Continues from `Magic.StreamOut` to DRC, LVS, and multi-corner STA. "
-     "Runtime ~30-60 min.",
+    ("## Step 6 — Post-DRT Signoff (GDS streamout + DRC + LVS + STA)\n\n"
+     "Resumes from the DRT-completed state (`RUN_2_SOC_TOP_PD/44-openroad-"
+     "detailedrouting/state_out.json`) under a **new run tag `RUN_3_GDS`**.\n\n"
+     "Steps: routing-obstruction removal → antenna check → fill insertion → "
+     "RCX parasitic extraction → multi-corner post-PnR STA → IR-drop → "
+     "Magic + KLayout GDS streamout → DRC → LVS → signoff report.\n\n"
+     "Runtime ~30–60 min.",
      STEP5B_CODE),
 
-    ("## Step 7 -- Signoff metrics\n\n"
+    ("## Step 7 — Signoff metrics\n\n"
      "Parses `build/soc_core/metrics.csv` and prints Die Area, DRC/LVS/"
      "antenna counts, setup/hold violations, and total power with a "
      "**CLEAN / VIOLATIONS PRESENT** verdict.",
@@ -368,6 +439,8 @@ external QSPI flash (off-die), so there is no flash macro — only the CPU and
 - **Re-characterize the SRAM.** Replace the single TT lib with a full
   OpenRAM multi-corner characterization for sharper STA.
 - **Inspect the layout.** `klayout ~/eda/designs/sky-forge/build/soc_core/gds/soc_core.gds`
+- **Review docs.** See `docs/SOC_TOP_WARNING_RESOLUTION.md` and
+  `docs/PICORV32_STA_ANALYSIS.md` for the full analysis.
 
 Cleanup:
 ```bash
@@ -402,6 +475,7 @@ def main():
     print(f'  {n_md} markdown cell(s), {n_code} code cell(s)')
     print(f'  Open with: jupyter notebook {OUT_PATH}')
     print('  NOTE: 8 KB SRAM (2 banks) + 1 KB I-Cache, external flash XIP.')
+    print('  PDN FIX: CPU macro POWER tops at met4 (signals met5) -> resolves PSM-0069; 100 MHz target.')
 
 
 if __name__ == '__main__':

@@ -224,19 +224,26 @@ def patch_top():
         'vh':  [str(core_base / 'nl'  / 'picorv32_axi.nl.v')],
         'lib': core_lib_map,
         'instances': {
-            # Centered in the 1800-wide die, below the single 2-bank SRAM row
-            'u_cpu': {'location': [576, 300], 'orientation': 'N'},
+            # PERIPHERY placement (floorplan fix): CPU flush to the BOTTOM edge so
+            # its AXI pins face UP into a wide contiguous central std-cell region.
+            # (Previously [576,300] = die CENTER, which left only a 50 um CPU<->SRAM
+            # channel and forced all CPU/SRAM routing through slivers -> local
+            # met1/met2 hotspots that DRT could not resolve. "Place macros at the
+            # periphery" is the standard congestion-avoidance guideline.)
+            # CPU 660x670 centered in x: (1800-660)/2 = 570 ; y=10 (flush bottom).
+            'u_cpu': {'location': [570, 10], 'orientation': 'N'},
         },
     }
 
-    # --- SRAM macros: single row of 2 native-N banks near TOP (2 banks = 8 KB) ---
-    # Each bank is 808.845 x 351.29 um. Die is 1800 x 1400 (8 KB variant).
-    #   Col 0: x = 90   -> spans 90..898.845       (20 um left margin)
-    #   Col 1: x = 980  -> spans 980..1788.845     (< 1800, ~11 um right margin)
-    #   Row (top):       y = 1020 -> spans 1020..1371  (~29 um top margin)
-    # CPU centered below at [576, 300]; std cells (peripherals, flash_ctrl,
-    # flash_xip, icache_1k) fill the bottom zone. External QSPI flash is off-die.
-    # No rotated banks -> clean macro_n-only PDN, no rotated-macro m3.2 DRC.
+    # --- SRAM macros: 2 native-N banks flush to the TOP edge (2 banks = 8 KB) ---
+    # Each bank is 808.845 x 351.29 um. Die 1800 x 1550.
+    #   Col 0: x = 90   -> spans 90..898.845     (20 um left margin)
+    #   Col 1: x = 980  -> spans 980..1788.845   (~11 um right margin)
+    #   Row (top): y = 1180 -> spans 1180..1531  (~10 um top margin, FLUSH TOP)
+    # This leaves a WIDE contiguous central channel y=680..1180 (~500 um, full
+    # width) between the CPU (bottom) and SRAMs (top) for the AXI interconnect,
+    # APB bridge, peripherals, flash_ctrl and the 512 B I-Cache — the routing that
+    # ties the macros together now has room instead of a 50 um sliver.
     sram_base = Path(CONTAINER_WORKSPACE) / 'openram' / 'build'
     sram_lib_map = {
         corner: [str(sram_base / f'{SRAM_NAME}_TT_1p8V_25C.lib')]
@@ -248,8 +255,8 @@ def patch_top():
         'vh':  [str(sram_base / f'{SRAM_NAME}.v')],
         'lib': sram_lib_map,
         'instances': {
-            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1020], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1020], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1180], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1180], 'orientation': 'N'},
         },
     }
 
@@ -258,17 +265,30 @@ def patch_top():
     cfg['MACROS'][SRAM_NAME]      = sram_entry
 
     # PDN_MACRO_CONNECTIONS: MUST be List[str] (LibreLane v3 schema).
+    # Format: "<inst_regex> <power_net> <ground_net> <power_pin> <ground_pin>".
+    # The picorv32_axi macro exposes std-cell power PINS named VPWR/VGND (NOT
+    # vccd1/vssd1) — its pin names must be given correctly so pdngen ties the
+    # macro's met4 power pins into the vccd1/vssd1 grid. (The OpenRAM SRAM's pins
+    # really are named vccd1/vssd1.) Using the wrong pin name here left the macro
+    # power-connection a no-op; combined with the old met5 macro pins that caused
+    # PSM-0069 (see picorv32_core.yaml / docs).
     cfg['PDN_MACRO_CONNECTIONS'] = [
-        '.*u_cpu.* vccd1 vssd1 vccd1 vssd1',
+        '.*u_cpu.* vccd1 vssd1 VPWR VGND',
         '.*u_bank.* vccd1 vssd1 vccd1 vssd1',
     ]
     cfg['VDD_NETS'] = ['vccd1']
     cfg['GND_NETS'] = ['vssd1']
 
-    # 8 KB variant floorplan / routing knobs (2 native banks -> compact, low congestion)
-    cfg['DIE_AREA']             = [0, 0, 1800, 1400]
-    cfg['PL_TARGET_DENSITY_PCT'] = 60
-    cfg['GRT_ADJUSTMENT']        = 0.25
+    # Floorplan / placement knobs.
+    # The DRT-shorts root cause was the FLOORPLAN (CPU in die center -> 50 um
+    # CPU<->SRAM channel -> local met1/met2 hotspots). That is now fixed by the
+    # PERIPHERY macro placement above (CPU bottom, SRAMs top, ~509 um central
+    # channel). With a proper channel, density returns to a normal ~50% — the
+    # earlier drop to 35% over-spread the logic (long wires) and made GRT WORSE
+    # (16k overflow); it was treating a floorplan problem with a density knob.
+    cfg['DIE_AREA']             = [0, 0, 1800, 1550]
+    cfg['PL_TARGET_DENSITY_PCT'] = 50    # back to normal (35% over-spread -> long wires)
+    cfg['GRT_ADJUSTMENT']        = 0.15
     cfg['GRT_OVERFLOW_ITERS']    = 150
 
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
@@ -283,10 +303,12 @@ def patch_top():
 # ============================================================
 
 def run_chip_top():
-    print("\n=== Step 5: Run soc_core chip-top flow (up to GLOBAL routing) ===")
-    # Stops at OpenROAD.GlobalRouting — i.e. BEFORE detailed routing. This shakes
-    # out synthesis/floorplan/PDN/placement/CTS/global-route warnings first,
-    # without hitting the detailed-route DRC wall. Extend --to later for signoff.
+    print("\n=== Step 5: Run soc_core chip-top flow (through DETAILED routing) ===")
+    # Runs through OpenROAD.DetailedRouting. GRT_ALLOW_CONGESTION=true lets global
+    # routing pass residual localized overflow (root cause halved via the 512 B
+    # icache) to detailed routing, which resolves it with fine rip-up-reroute.
+    # Stopping at global routing would gain nothing from that flag — detailed
+    # routing is where the residual congestion is actually closed and DRC checked.
     script = textwrap.dedent(f'''
         set -e
         cd {CONTAINER_WORKSPACE}
@@ -296,7 +318,7 @@ def run_chip_top():
             --scl {STD_CELL_LIB} \\
             --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\
             --run-tag {TOP_RUN_TAG} \\
-            --to OpenROAD.GlobalRouting
+            --to OpenROAD.DetailedRouting
     ''').strip()
     run_or_print(script, RUN_CHIP_TOP, shell_on_container=True, timeout=None)
 
@@ -305,7 +327,11 @@ def run_chip_top():
 # ============================================================
 
 def run_chip_top_gds():
-    print("\n=== Step 6: Run soc_core GDS streamout & signoff ===")
+    print("\n=== Step 6: Run soc_core post-DRT signoff (GDS + DRC + LVS + STA) ===")
+    # Resumes from the DRT-completed state (step 44) using a NEW run tag so the
+    # DRT-clean result is preserved. Runs: routing-obstruction removal, antenna
+    # check, fill insertion, RCX extraction, post-PnR multi-corner STA, IR-drop,
+    # Magic + KLayout GDS streamout, DRC, LVS, and the signoff report.
     script = textwrap.dedent(f'''
         set -e
         cd {CONTAINER_WORKSPACE}
@@ -315,8 +341,8 @@ def run_chip_top_gds():
             --scl {STD_CELL_LIB} \\
             --save-views-to {CONTAINER_WORKSPACE}/build/soc_core \\
             --run-tag {GDS_RUN_TAG} \\
-            --from Magic.StreamOut \\
-            --with-initial-state librelane/runs/{TOP_RUN_TAG}/state_out.json
+            --from Odb.RemoveRoutingObstructions \\
+            --with-initial-state librelane/runs/{TOP_RUN_TAG}/44-openroad-detailedrouting/state_out.json
     ''').strip()
     run_or_print(script, RUN_GDS, shell_on_container=True, timeout=None)
 

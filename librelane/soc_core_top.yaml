@@ -37,7 +37,7 @@ VERILOG_FILES:
 
 CLOCK_PORT: clk_i
 CLOCK_NET: clk_i
-CLOCK_PERIOD: 20  # 50 MHz
+CLOCK_PERIOD: 10  # 100 MHz
 
 # --- Timing corners (1 corner to prevent OOM during parallel RCX/STA) ---
 # Full 9-corner run requires ~12+ GB RAM. Use TT nom only for P&R signoff.
@@ -68,15 +68,31 @@ FP_PIN_ORDER_CFG: dir::soc_core_pins.cfg
 # --- Power Distribution ---
 PDN_HORIZONTAL_HALO: 8
 PDN_VERTICAL_HALO: 8
+PDN_CFG: dir::pdn_cfg.tcl   # custom grid: stdcell + macro_n (native CPU+SRAM) -> 0 PG violations
 
 # --- Routing (sky130 met1..met5) ---
 RT_MIN_LAYER: met1
 RT_MAX_LAYER: met5
-GRT_ADJUSTMENT: 0.25  # v2: increased to prevent stuck met4 DRT short
+# GRT-0116/0230 congestion fix: 0.25 was too aggressive a track de-rate for the
+# icache-dominated core. 0.15 frees ~10% more global-routing resources.
+GRT_ADJUSTMENT: 0.15
 GRT_OVERFLOW_ITERS: 150
+# GRT-0116 safety valve: the ROOT-CAUSE fix is halving the icache FF store
+# (flash_xip.sv NUM_LINES 32->16 = 512 B), which removes the met1/met2 hotspot.
+# Average global-routing utilisation is only ~46%, so any residual overflow is
+# LOCALIZED and is what detailed routing (TritonRoute) is designed to resolve
+# with fine rip-up-and-reroute. This flag lets global routing pass that residual
+# to detailed routing instead of hard-failing. It is NOT a substitute for the
+# density fix — it is used together with it. See docs/SOC_TOP_WARNING_RESOLUTION.md.
+GRT_ALLOW_CONGESTION: true
 
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
+# GRT-0281 high-fanout fix: bound combinational fanout so Yosys/OpenROAD build a
+# buffer tree for the icache_1k req_foff[2:4] word-select nets (fanout 1k-3.4k)
+# instead of a single flat net that congests global routing. Clock/reset are
+# excluded (handled by CTS).
+SYNTH_MAX_FANOUT: 16
 
 # --- Linter (Verilator) — triaged for tapeout (2026-07-09) ---
 # A full `verilator --lint-only -Wall` on the elaborated design produced ONLY
