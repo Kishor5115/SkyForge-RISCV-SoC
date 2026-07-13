@@ -4,6 +4,16 @@ module soc_core #(
     parameter BOOTROM_ADDR_WIDTH  = 8,  // 256 bytes (2^8 bytes = 0x00-0xFF)
     parameter PROGADDR_IRQ        = 32'h40010010 // v2: IRQ vector in flash XIP (was SRAM 0x10010)
 )(
+`ifdef USE_POWER_PINS
+    // Top-level power pins (only elaborated when SYNTH_POWER_DEFINE=USE_POWER_PINS
+    // during hardening). Propagated to the SRAM macro so the gate netlist carries
+    // the vccd1/vssd1 connectivity that the PDN makes in the layout — required for
+    // LVS to match (otherwise the SRAM power pins float in the netlist while the
+    // PDN ties them in the layout -> vccd1/vssd1 pin mismatch). Guarded so RTL
+    // simulation (no define) is unaffected.
+    inout wire           vccd1,
+    inout wire           vssd1,
+`endif
     input  logic         clk_i,
     input  logic         rst_ni,
     // UART
@@ -371,6 +381,10 @@ module soc_core #(
         .DATA_WIDTH(32),
         .SRAM_INIT_FILE(SRAM_INIT_FILE)
     ) u_sram (
+`ifdef USE_POWER_PINS
+        .vccd1       (vccd1),
+        .vssd1       (vssd1),
+`endif
         .clk         (clk_i),
         .resetn      (rst_ni),
         .axi_awaddr  (s1_awaddr[12:0]),

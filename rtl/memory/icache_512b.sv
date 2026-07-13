@@ -1,20 +1,26 @@
 /*
- * icache_1k — 1 KB Direct-Mapped Instruction/Read Cache for Flash XIP  (v2)
+ * icache_512b — 512 B Direct-Mapped Instruction/Read Cache for Flash XIP  (v2)
  *
  * Sits between the CPU read path and the external QSPI flash XIP read port.
  * Flash XIP fetches are ~50-100+ SPI cycles each; this cache returns a hit
  * in a single cycle and amortises misses over a full 8-word (32-byte) line.
  *
- * Organisation:
- *   NUM_LINES  = 32   (direct-mapped)
- *   LINE_WORDS = 8    (32 bytes per line)   -> 32 * 32 B = 1 KB
+ * Design configuration (as instantiated in flash_xip.sv):
+ *   NUM_LINES  = 16   (direct-mapped)  — PPA/congestion trade vs the original 32
+ *   LINE_WORDS = 8    (32 bytes per line)   -> 16 * 32 B = 512 B
  *   Storage is flip-flop based (NO OpenRAM macro), so it hardens as std cells.
+ *
+ * PPA rationale: at 100 MHz the cache hit-latency is not on any critical path.
+ *   32 lines (1 KB) = 8192 FFs — dominant area, dynamic power, and GRT congestion
+ *   source (req_foff[2:4] fanout 1k-3.4k). 16 lines (512 B) = 4096 FFs, ~half
+ *   the store, clears routing congestion, same 8-word burst fill efficiency.
+ *   See docs/SOC_TOP_WARNING_RESOLUTION.md for the full analysis.
  *
  * Address model (flash offset = low 24 bits of the AXI address):
  *   foff[ 1:0]  byte offset within word (ignored — word reads)
  *   foff[ 4:2]  word index within line   (3 bits  -> 8 words)
- *   foff[ 9:5]  line index               (5 bits  -> 32 lines)
- *   foff[23:10] tag                       (14 bits)
+ *   foff[ 8:5]  line index               (4 bits  -> 16 lines)
+ *   foff[23:9]  tag                       (15 bits)
  *
  * Interfaces (AXI4-Lite, read-only):
  *   s_axi_*  — SLAVE  : read requests from the flash-XIP wrapper (CPU side)
@@ -25,7 +31,7 @@
  * requested word. Writes are not handled here (the wrapper routes them).
  */
 
-module icache_1k #(
+module icache_512b #(
     parameter int NUM_LINES  = 32,
     parameter int LINE_WORDS = 8
 ) (

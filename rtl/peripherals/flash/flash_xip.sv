@@ -8,7 +8,7 @@
  *                        Only addr[7:0] is decoded by flash_ctrl.
  *
  *   XIP memory      : 0x4001_0000 - 0x40FF_FFFF
- *                     -> reads served by icache_1k, which fills lines from the
+ *                     -> reads served by icache_512b, which fills lines from the
  *                        flash_ctrl XIP read port (external QSPI flash chip).
  *                        Flash physical offset = addr[23:0] (e.g. 0x4001_0000
  *                        maps to flash offset 0x01_0000).
@@ -145,15 +145,11 @@ module flash_xip (
     assign ic_s_rready  = axi_rready & ~r_reg;
 
     // ── I-Cache ────────────────────────────────────────────────
-    // PPA decision (50 MHz FreeRTOS embedded SoC): the FF-based line store is
-    // 32*8*32b = 8192 FFs at NUM_LINES=32 — the dominant area/dynamic-power cost
-    // and the met1/met2 global-routing congestion hotspot. At 50 MHz the cache
-    // hit-latency is not on any critical path, so 512 B (16 lines x 8 words =
-    // 4096 FFs, half the store) is the right trade: same 8-word flash-burst line
-    // (XIP fill efficiency preserved), ~half the dynamic power, and it clears the
-    // routing congestion. See docs/SOC_TOP_WARNING_RESOLUTION.md.
-    icache_1k #(
-        .NUM_LINES (16),   // 512 B (was 32 = 1 KB) — PPA/congestion trade
+    // 16 lines x 8 words = 4096 FFs, 512 B) is the right trade: same 8-word flash-burst line
+    // (XIP fill efficiency preserved), ~half the dynamic power, and clears routing congestion.
+    // See docs/SOC_TOP_WARNING_RESOLUTION.md.
+    icache_512b #(
+        .NUM_LINES (16),   // 512 B
         .LINE_WORDS(8)
     ) u_icache (
         .clk          (clk),

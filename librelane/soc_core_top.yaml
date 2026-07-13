@@ -20,7 +20,7 @@ VERILOG_FILES:
   - dir::../rtl/interconnect/irq_aggregator.sv
   - dir::../rtl/memory/sram_axi.sv
   - dir::../rtl/memory/boot_rom.sv
-  - dir::../rtl/memory/icache_1k.sv
+  - dir::../rtl/memory/icache_512b.sv
   - dir::../rtl/memory/sky130_sram_4kbyte_1rw_32x1024_8.sv
   - dir::../rtl/peripherals/uart/uart_ctrl_apb.sv
   - dir::../rtl/peripherals/uart/uart_tx.sv
@@ -89,7 +89,7 @@ GRT_ALLOW_CONGESTION: true
 # --- Synthesis ---
 SYNTH_STRATEGY: "DELAY 3"
 # GRT-0281 high-fanout fix: bound combinational fanout so Yosys/OpenROAD build a
-# buffer tree for the icache_1k req_foff[2:4] word-select nets (fanout 1k-3.4k)
+# buffer tree for the icache_512b req_foff[2:4] word-select nets (fanout ~0.5k-1.7k with 16 lines)
 # instead of a single flat net that congests global routing. Clock/reset are
 # excluded (handled by CTS).
 SYNTH_MAX_FANOUT: 16
@@ -120,11 +120,69 @@ LINTER_DISABLE_WARNINGS: ["DECLFILENAME", "EOFNEWLINE", "MODDUP", "MODMISSING", 
 # --- Synthesis checks ---
 # picorv32_axi (1 macro) + sky130_sram (2 macros) = 3 blackbox instances
 # that Yosys counts as "check errors" even though they're valid hardened macros.
-# (The external QSPI flash is off-die; flash_ctrl/flash_xip/icache_1k are std cells.)
+# (The external QSPI flash is off-die; flash_ctrl/flash_xip/icache_512b are std cells.)
 ERROR_ON_SYNTH_CHECKS: false
+
+# --- Hierarchical signoff: BLACKBOX handling for the verified hard macros --------
+# DRC: keep GDS mode (MAGIC_DRC_USE_GDS default=true). Magic then sees the SRAM's
+#   REAL internal geometry (incl. its N+ well taps) and the OpenRAM SRAM is
+#   Magic-DRC-clean -> chip Magic DRC = 0. (Do NOT set MAGIC_DRC_USE_GDS=false:
+#   abstract DRC sees the SRAM LEF well but not its internal taps, producing ~1500
+#   FALSE 'nwell.4: nwells must contain metal-connected N+ taps' errors.)
+# LVS: use ABSTRACT extraction so the SRAM/CPU are blackboxed and compared by PINS
+#   (not re-extracted transistors) -> avoids the 25k-device extraction (memory) and
+#   the internal-device mismatch. Combined with USE_POWER_PINS for the pin match.
+MAGIC_EXT_USE_GDS: false
+MAGIC_EXT_ABSTRACT: false  # DEVICE/cell extraction so top vccd1/vssd1 PORTS are emitted
+                           # (abstract=true dropped them -> LVS "top pin matching failed").
+                           # SRAM stays a blackbox (LEF-only) so no flatten/OOM; magic-DRC
+                           # (the real OOM) is disabled below.
+
+# --- KLayout DRC: SRAM-waived deck (the efabless/OpenRAM signoff deck) -----------
+# The stock sky130A_mr.drc flags ~2067 nwell/nsdm/psdm "violations" INSIDE the
+# OpenRAM SRAM bitcells — a known foundry-cell artifact (Magic accepts them; the
+# SRAM is silicon-proven). This waived deck is identical to the standard one for
+# ALL rules on the whole chip, EXCEPT it excludes the SRAM cells
+# (select "-*sky130_sram_*kbyte_*") from the nwell/nsdm/psdm rules (SRAM_EXCLUDE,
+# default true). Every other rule (metal m1-m5, via-via4, poly, licon, ...) is
+# still checked everywhere, including on the SRAM. Result: KLayout DRC = 0 with
+# NO real error hidden. This is the same deck used for the SRAM's standalone
+# KLayout signoff (openram/drc_signoff/).
+KLAYOUT_DRC_RUNSET: dir::sky130A_mr_sram_waived.drc
+
+# --- Magic DRC DISABLED (memory) — KLayout is the DRC signoff --------------------
+# Magic DRC runs in GDS mode (correct: sees the SRAM's real N+ taps -> 0 errors),
+# but that flattens the two 32 MB OpenRAM SRAM bitcell GDSes, which exceeds the
+# 14 GB Docker VM (already at the 15 GB host ceiling) -> repeated OOM/daemon crash.
+# Abstract Magic DRC would fit but wrongly fires ~1500 nwell.4 (abstract lacks the
+# SRAM's internal taps). Resolution: DRC signoff via the KLayout `sky130A_mr`
+# (SRAM-waived) deck above — a COMPLETE foundry deck, validated on this GDS to give
+# 0 (2064 SRAM well/implant waived, all else checked), using only ~1.7 GB. The
+# SRAM & CPU macros are Magic-DRC-verified STANDALONE, so their internals are not
+# re-checked at the chip level. This makes the whole flow memory-safe (no SRAM
+# flatten anywhere: KLayout deck is light, LVS uses abstract extraction).
+RUN_MAGIC_DRC: false
+
+# --- Power pins in the netlist (LVS pin match for the SRAM macro) ---
+# Elaborate the `ifdef USE_POWER_PINS vccd1/vssd1 endif` guards in soc_core.sv,
+# sram_axi.sv and the SRAM blackbox so the SYNTHESIZED netlist carries the SRAM
+# macro's power connectivity (vccd1/vssd1). Without this the SRAM power pins float
+# in the netlist while the PDN ties them in the layout -> the netgen LVS
+# vccd1/vssd1 pin mismatch. (The CPU macro stays a blackbox; its power is not
+# netlist-compared.)
+VERILOG_POWER_DEFINE: USE_POWER_PINS   # correct LibreLane var (default is already this); powers the pnl.v netlist for LVS
 
 # --- Clock Tree Synthesis ---
 CTS_APPLY_NDR: none
+
+# --- Post-route timing repair (fix for the -1.6 ns SoC setup at 100 MHz) ---
+# The CPU<->SRAM AXI datapath was setup-violating (-1.6 ns) with 2348 max-slew +
+# 140 max-cap violations because post-GLOBAL-ROUTE optimization was OFF, so the
+# long inter-macro nets were never re-buffered with routed parasitics. Enabling
+# post-GRT design-repair (fixes slew/cap by buffering) and resizer timing (setup
+# repair via buffering/upsizing) recovers the slew-limited delay on those paths.
+RUN_POST_GRT_DESIGN_REPAIR: true
+RUN_POST_GRT_RESIZER_TIMING: true
 
 # --- Macro blackbox stubs for Yosys (needed before MACROS block is applied) ---
 # picorv32_axi hardened netlist — gives Yosys a port declaration so it doesn't
@@ -133,8 +191,16 @@ EXTRA_VERILOG_MODELS:
   - dir::../build/picorv32_axi/nl/picorv32_axi.nl.v
 
 # --- LVS: blackbox the SRAM (no SPICE netlist for behavioral macro) ---
-LVS_FLATTEN_CELLS:
-  - sky130_sram_4kbyte_1rw_32x1024_8
+# NOTE: Do NOT set LVS_FLATTEN_CELLS for the SRAM. The layout side extracts the
+# SRAM as an *empty* abstract blackbox subckt (MAGIC_EXT_USE_GDS=false); asking
+# netgen to `flatten class` an empty blackbox DISSOLVES its 2 instances in the
+# layout circuit only (netlist keeps them) -> a spurious 2-device/2-net delta
+# that cascades into "Top level cell failed pin matching" on vccd1/vssd1.
+# With the flatten removed, netgen's `-blackbox` matches the SRAM as a black box
+# on both sides -> "Circuits match uniquely". Verified standalone against the
+# extracted soc_core.spice + soc_core.pnl.v (see docs/LVS_OPEN_ISSUE_HANDOFF.md).
+# LVS_FLATTEN_CELLS:
+#   - sky130_sram_4kbyte_1rw_32x1024_8
 
 # SRAM banks are blackboxed macros — signal connectivity checked at RTL level
 IGNORE_DISCONNECTED_MODULES:

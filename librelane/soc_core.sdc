@@ -18,7 +18,7 @@ create_clock -name $clk_name -period $clk_period $clk_port
 set_clock_uncertainty 0.25 [get_clocks $clk_name]
 
 # --- Max fanout / transition (buffer high-fanout logic nets) ---
-# The FF-based icache_1k read/write mux fans req_foff[2:4] out to thousands of
+# The FF-based icache_512b read/write mux fans req_foff[2:4] out to thousands of
 # terminals (GRT-0281). Bounding fanout lets the resizer build a buffer tree
 # instead of one enormous net, easing routing congestion. Clock/reset trees are
 # built separately by CTS and are not affected by this constraint.

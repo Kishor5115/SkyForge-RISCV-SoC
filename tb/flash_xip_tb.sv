@@ -1,7 +1,7 @@
 /*
  * flash_xip_tb — Directed test for the v2 flash XIP datapath
  *
- * Exercises flash_xip (icache_1k + flash_ctrl) against the behavioral external
+ * Exercises flash_xip (icache_512b + flash_ctrl) against the behavioral external
  * flash model:
  *   1. Configure flash_ctrl: small CLKDIV, enable + XIP enable via reg window.
  *   2. Read cached XIP words (0x40010000+) and check against known flash data.

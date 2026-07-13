@@ -196,8 +196,8 @@ def patch_top():
         'lib': {c: [str(sram_base / f'{SRAM_NAME}_TT_1p8V_25C.lib')]
                 for c in SKY130_CORNERS},
         'instances': {
-            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1180], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1180], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1030], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1030], 'orientation': 'N'},
         },
     }
 
@@ -221,7 +221,7 @@ def patch_top():
     print(f'Patched {cfg_path}')
     print(f'  Die: 1800x1550, density 50%, CPU bottom + SRAM top (periphery)')
     print(f'  CPU PDN pin: VPWR/VGND -> vccd1/vssd1 net')
-    print(f'  SRAM: 2 banks @ y=1180 (top edge); CPU @ y=10 (bottom edge)')
+    print(f'  SRAM: 2 banks @ y=1030 (top edge); CPU @ y=10 (bottom edge)')
 
 if RUN_PATCH_TOP:
     patch_top()
@@ -395,7 +395,7 @@ PDN-0179; the single-met4 power grid is the correct approach.)""",
 Dynamically injects two macros into `soc_core_top.yaml`:
 
 - **`picorv32_axi`** — per-corner Liberty (9 sky130A corners), at `[570, 10]` (bottom edge).
-- **SRAM** — 2× OpenRAM 4 KB banks at `[90, 1180]` and `[980, 1180]` (top edge).
+- **SRAM** — 2× OpenRAM 4 KB banks at `[90, 1180]` and `[980, 1030]` (top edge).
 
 **PDN_MACRO_CONNECTIONS** format: `"<regex> <vdd_net> <gnd_net> <vdd_pin> <gnd_pin>"`.
 - CPU macro: pins are **VPWR/VGND** (std-cell naming from LibreLane harden).

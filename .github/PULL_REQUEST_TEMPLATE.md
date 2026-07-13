@@ -17,8 +17,7 @@
 - [ ] `make sim_soc` passes (SoC integration test)
 - [ ] `make run` runs without errors (Verilator)
 - [ ] Firmware builds cleanly (`make firmware`)
-- [ ] UVM tests pass (if UVM environment was changed)
-- [ ] OpenLane flow passes (if RTL was changed)
+- [ ] LibreLane flow passes (if RTL was changed)
 
 ## Checklist
 

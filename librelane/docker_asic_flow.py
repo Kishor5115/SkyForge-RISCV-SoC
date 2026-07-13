@@ -6,8 +6,8 @@ SRAM holds data/heap only.)
 
 Memory architecture:
   * On-chip SRAM: 8 KB = 2x OpenRAM 4 KB banks (native orientation, single row).
-  * Code/rodata: external QSPI flash (XIP), cached by a 1 KB I-Cache
-    (icache_1k) + flash_xip wrapper — std cells, NOT a macro (the flash chip is
+  * Code/rodata: external QSPI flash (XIP), cached by a 512 B I-Cache
+    (icache_512b) + flash_xip wrapper — std cells, NOT a macro (the flash chip is
     OFF-die). Only the CPU + 2 SRAM banks are hardened macros / blackboxes.
   * Die 1800 x 1400; no rotated macros -> clean macro_n-only PDN.
   * chip-top run tags below (the picorv32 core reuses RUN_1_PICORV32).
@@ -239,8 +239,8 @@ def patch_top():
     # Each bank is 808.845 x 351.29 um. Die 1800 x 1550.
     #   Col 0: x = 90   -> spans 90..898.845     (20 um left margin)
     #   Col 1: x = 980  -> spans 980..1788.845   (~11 um right margin)
-    #   Row (top): y = 1180 -> spans 1180..1531  (~10 um top margin, FLUSH TOP)
-    # This leaves a WIDE contiguous central channel y=680..1180 (~500 um, full
+    #   Row (top): y = 1030 -> spans 1030..1381  (~169 um top margin)
+    # This leaves a WIDE contiguous central channel y=680..1030 (~350 um, full
     # width) between the CPU (bottom) and SRAMs (top) for the AXI interconnect,
     # APB bridge, peripherals, flash_ctrl and the 512 B I-Cache — the routing that
     # ties the macros together now has room instead of a 50 um sliver.
@@ -255,8 +255,8 @@ def patch_top():
         'vh':  [str(sram_base / f'{SRAM_NAME}.v')],
         'lib': sram_lib_map,
         'instances': {
-            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1180], 'orientation': 'N'},
-            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1180], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[0].u_bank': {'location': [90,  1030], 'orientation': 'N'},
+            'u_sram.gen_sram_bank[1].u_bank': {'location': [980, 1030], 'orientation': 'N'},
         },
     }
 
@@ -292,7 +292,7 @@ def patch_top():
     cfg['GRT_OVERFLOW_ITERS']    = 150
 
     cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False))
-    print(f'Patched {cfg_path}  (1800x1400, 2-bank 8KB SRAM single row, 1KB I-Cache)')
+    print(f'Patched {cfg_path}  (1800x1550, 2-bank 8KB SRAM, 512B I-Cache, CPU@bottom)')
     print(f'  + picorv32_axi  ({len(SKY130_CORNERS)} corners)')
     print(f'  + {SRAM_NAME} x2  (TT lib mapped to all corners)')
     print(f'  + PDN_MACRO_CONNECTIONS (vccd1/vssd1)')

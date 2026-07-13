@@ -13,6 +13,10 @@ module sram_axi #(
     parameter DATA_WIDTH = 32,
     parameter SRAM_INIT_FILE = ""       // Optional hex file for simulation preload
 )(
+`ifdef USE_POWER_PINS
+    inout wire                    vccd1,   // propagated to SRAM macro banks for LVS
+    inout wire                    vssd1,
+`endif
     input  logic                  clk,
     input  logic                  resetn,
 
@@ -88,6 +92,10 @@ module sram_axi #(
             assign bank_dout[gi] = bank_dout0[DATA_WIDTH-1:0];
 
             sky130_sram_4kbyte_1rw_32x1024_8 u_bank (
+`ifdef USE_POWER_PINS
+                .vccd1  (vccd1),
+                .vssd1  (vssd1),
+`endif
                 .clk0   (clk),
                 .csb0   (bank_csb0),
                 .web0   (sram_web0),

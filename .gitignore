@@ -35,19 +35,6 @@ sim/integration_test.hex
 sim/obj_dir/
 sim/obj_dir_*/
 
-# UVM compile artifacts (Verilator, VCS, Questa, Xcelium)
-uvm/obj_dir/
-uvm/csrc/
-uvm/simv
-uvm/simv.daidir/
-uvm/*.log
-uvm/*.vdb
-uvm/cov_report/
-uvm/urgReport/
-uvm/work/
-uvm/imc_report/
-uvm/dump.vcd
-
 # General Icarus / Verilator outputs
 *.vvp
 *.vcd

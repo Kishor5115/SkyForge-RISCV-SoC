@@ -138,7 +138,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 Types: `feat`, `fix`, `rtl`, `fw`, `sim`, `docs`, `ci`, `refactor`, `test`
 
-Scopes (optional): `uart`, `gpio`, `timer`, `spi`, `debug`, `sram`, `uvm`, `openlane`, `freertos`
+Scopes (optional): `uart`, `gpio`, `timer`, `spi`, `debug`, `sram`, `librelane`, `freertos`
 
 Examples:
 ```
